@@ -21,3 +21,7 @@ AI tournaments). Changed defaults will be advertised when the match begins.
  - Get comprehensive information on the unit types, upgrades, technologies, weapons, and more.
  - Study and research real-time AI algorithms in a robust commercial RTS environment.
  
+## Legal ##
+Starcraft and Starcraft: Broodwar are trademarks of Blizzard Entertainment. BWAPI is a third party 
+"hack" that violates the End User License Agreement (EULA). It is strongly recommended to purchase 
+a legitimate copy of Starcraft: Broodwar from Blizzard Entertainment before using BWAPI.
