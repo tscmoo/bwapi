@@ -21,6 +21,27 @@ AI tournaments). Changed defaults will be advertised when the match begins.
  - Get comprehensive information on the unit types, upgrades, technologies, weapons, and more.
  - Study and research real-time AI algorithms in a robust commercial RTS environment.
  
+## Sample Projects ##
+
+
+## Getting Started ##
+
+
+## Important Links ##
+ * **Project Page:**          http://bwapi.github.io/
+ * **Documentation:**         http://bwapi.github.io/
+ * **Repository:**            https://github.com/bwapi/bwapi
+ * **Issue Tracker:**         https://github.com/bwapi/bwapi/issues
+ * **IRC Channel:**           Freenode #BWAPI
+ * **Forums:**                http://www.broodwarai.com/forums/
+
+## Issues ##
+You may experience issues when working with BWAPI. Here are some steps you may want to follow in order to resolve them.
+ 1. Check the log files found in `Starcraft/Errors/` for crash and error reports.
+ 2. Ask in the IRC if anyone has experienced your issue before.
+ 3. Check the Issue Tracker to see if your issue has already been reported.
+ 4. Submit an issue to the Issue Tracker with any relevant logs and information about what happened, including BWAPI version/revision.
+
 ## Legal ##
 Starcraft and Starcraft: Broodwar are trademarks of Blizzard Entertainment. BWAPI is a third party 
 "hack" that violates the End User License Agreement (EULA). It is strongly recommended to purchase 

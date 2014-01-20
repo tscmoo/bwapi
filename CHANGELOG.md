@@ -1,4 +1,15 @@
 =================================================
+Changes from BWAPI 4.0.1 Beta (r4453) to recent (23:51 January 19, 2014)
+=================================================
+Changes:
+  * BWAPI has migrated from Google Code to GitHub.
+  
+Bug Fixes:
+  * Fixed a bug where some replays would be skipped when `auto_menu` iterated through them.
+  * Fixed a major bug that could cause crashes or produce undefined results on larger maps when using `hasPath` or `getRegion`.
+  * Fixed a crash when the `save_replay` configuration option contained extended ASCII characters.
+
+=================================================
 Changes from BWAPI 4.0.0 Beta (r4350) to BWAPI 4.0.1 Beta (r4453)
 =================================================
 Changes:
