@@ -461,6 +461,8 @@ namespace BWAPI
       p->startLocationY  = i->getStartLocation().y;
     }
 
+    MemZero(data->units);
+
     data->forceCount    = forceVector.size();
     data->playerCount    = playerVector.size();
     data->initialUnitCount  = unitVector.size();
