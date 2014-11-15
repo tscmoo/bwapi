@@ -564,6 +564,8 @@ namespace BWAPI
       }
       BroodwarImpl.isTournamentCall = false;
     }
+    if (matchStarting)
+      MemZero(data->units);
     for(Unit u : BroodwarImpl.lastEvadedUnits)
       data->units[u->getID()] = static_cast<UnitImpl*>(u)->data;
 
