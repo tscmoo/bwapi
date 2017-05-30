@@ -1,9 +1,6 @@
 #include "GameImpl.h"
 #include <Util/Convenience.h>
 
-#include <BW/CUnit.h>
-#include <BW/Dialog.h>
-
 #include <BWAPI/UnitImpl.h>
 #include <BWAPI/PlayerImpl.h>
 #include <BWAPI/Order.h>
@@ -15,12 +12,14 @@ namespace BWAPI
 {
   using namespace Filter;
   //------------------------------------------------ GET UNIT FROM INDEX -------------------------------------
-  UnitImpl* GameImpl::getUnitFromIndex(int index)
+  UnitImpl* GameImpl::getUnitFromBWUnit(BW::Unit unit)
   {
-    index &= 0x7FF;
-    if (static_cast<unsigned>(index) < unitArray.size())
-      return this->unitArray[index];
-    return nullptr;
+    if (!unit) return nullptr;
+    size_t index = unit.getIndex();
+    if (index >= unitArray.size()) return nullptr;
+    UnitImpl* i = unitArray[index];
+    i->bwunit = unit;
+    return i;
   }
   //------------------------------------------------ IS UNIT ALIVE
   bool inline isUnitAlive(UnitImpl* i, bool isHidden = false)
@@ -30,20 +29,20 @@ namespace BWAPI
 
     if ( !i ) return false;
 
-    BW::CUnit *u = i->getOriginalRawData;
+    BW::Unit u = i->bwunit;
     if ( !u ) return false;
 
-    UnitType _getType = BWAPI::UnitType(u->unitType);
+    UnitType _getType = BWAPI::UnitType(u.unitType());
 
     // Replica of official UnitInterface::IsDead function
-    if ( !u->sprite || (u->orderID == Orders::Die && u->orderState == 1) )
+    if ( !u.hasSprite() || (u.orderID() == Orders::Die && u.orderState() == 1) )
     {
       //Broodwar->printf("%s has met a true death", _getType.getName().c_str());
       return false;
     }
     // The rest is garbage?
 
-    if ( u->orderID == Orders::Die && u->orderState != 1)
+    if ( u.orderID() == Orders::Die && u.orderState() != 1)
     { // Starcraft will keep a unit alive when order state is not 1
       // if for some reason the "die" order was interrupted, the unit will remain alive with 0 hp
       //Broodwar->printf("Bad logic, %s would not die with order state %u", _getType.getName().c_str(), u->orderState);
@@ -93,8 +92,9 @@ namespace BWAPI
     // Now we will add alive units to the aliveUnits set and set their isAlive flag to true
 
     //compute alive units
-    for ( UnitImpl* u = UnitImpl::BWUnitToBWAPIUnit(BW::BWDATA::UnitNodeList_VisibleUnit_First); u; u = u->getNext() )
+    for ( auto i = bwgame.UnitNodeList_VisibleUnit_begin(), e = bwgame.UnitNodeList_VisibleUnit_end(); i != e; ++i )
     {
+      UnitImpl* u = getUnitFromBWUnit(*i);
       if ( isUnitAlive(u) )
       {
         u->isAlive = true;
@@ -102,8 +102,9 @@ namespace BWAPI
         u->updateInternalData();
       }
     }
-    for ( UnitImpl* u = UnitImpl::BWUnitToBWAPIUnit(BW::BWDATA::UnitNodeList_HiddenUnit_First); u; u = u->getNext() )
+    for ( auto i = bwgame.UnitNodeList_HiddenUnit_begin(), e = bwgame.UnitNodeList_HiddenUnit_end(); i != e; ++i )
     {
+      UnitImpl* u = getUnitFromBWUnit(*i);
       if ( isUnitAlive(u, true) )
       {
         u->isAlive = true;
@@ -111,8 +112,9 @@ namespace BWAPI
         u->updateInternalData();
       }
     }
-    for ( UnitImpl* u = UnitImpl::BWUnitToBWAPIUnit(BW::BWDATA::UnitNodeList_ScannerSweep_First); u; u = u->getNext() )
+    for ( auto i = bwgame.UnitNodeList_ScannerSweep_begin(), e = bwgame.UnitNodeList_ScannerSweep_end(); i != e; ++i )
     {
+      UnitImpl* u = getUnitFromBWUnit(*i);
       if ( isUnitAlive(u) )
       {
         u->isAlive = true;
@@ -230,11 +232,11 @@ namespace BWAPI
 
       u->updateData();
 
-      if ( u->getOriginalRawData->unitType == UnitTypes::Terran_Ghost)
+      if ( u->bwunit.unitType() == UnitTypes::Terran_Ghost)
       {
-        if (u->getOriginalRawData->orderID == Orders::NukePaint)
-          u->nukePosition = BWAPI::Position(u->getOriginalRawData->orderTarget.pt);
-        if (u->getOriginalRawData->orderID != Orders::NukeTrack)
+        if (u->bwunit.orderID() == Orders::NukePaint)
+          u->nukePosition = BWAPI::Position(u->bwunit.orderTarget());
+        if (u->bwunit.orderID() != Orders::NukeTrack)
           u->nukeDetected = false;
         else
         {
@@ -261,7 +263,7 @@ namespace BWAPI
     for(Unit ui : accessibleUnits)
     {
       UnitImpl *u = static_cast<UnitImpl*>(ui);
-      UnitImpl* orderTargetUnit = UnitImpl::BWUnitToBWAPIUnit(u->getOriginalRawData->orderTarget.pUnit);
+      UnitImpl* orderTargetUnit = getUnitFromBWUnit(u->bwunit.orderTarget_pUnit());
       if ( orderTargetUnit && orderTargetUnit->exists() && u->getOrder() == Orders::ConstructingBuilding )
       {
         UnitImpl* j             = orderTargetUnit;
@@ -519,7 +521,7 @@ namespace BWAPI
     Position pos( this->selectedUnitSet.getPosition() );
 
     // Move the position to the center of the screen
-    pos -= Position(BW::BWDATA::GameScreenBuffer.width() / 2, BW::BWDATA::GameScreenBuffer.height() / 2 - 40);
+    //pos -= Position(BW::BWDATA::GameScreenBuffer.width() / 2, BW::BWDATA::GameScreenBuffer.height() / 2 - 40);
 
     // Make this position a valid position
     pos.makeValid();

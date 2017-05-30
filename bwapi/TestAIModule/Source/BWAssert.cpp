@@ -12,17 +12,17 @@ void log(const char* format, ...)
 
   va_list ap;
   va_start(ap, format);
-  vsnprintf_s(buffer, BUFFER_SIZE, BUFFER_SIZE, format, ap);
+  vsnprintf(buffer, BUFFER_SIZE, format, ap);
   va_end(ap);
 
   FILE *outfile;
   BWAPI::Broodwar->printf(buffer);
-  if (fopen_s(&outfile, "bwapi-data/logs/TestModule - Failed Asserts.log", "a+")==0)
+  outfile = fopen("bwapi-data/logs/TestModule - Failed Asserts.log", "a+");
+  if (outfile)
   {
     if (outfile)
     {
-      fprintf_s(outfile, buffer);
-      fprintf_s(outfile, "\n");
+      fprintf(outfile, "%s\n", buffer);
       fclose(outfile);
     }
   }

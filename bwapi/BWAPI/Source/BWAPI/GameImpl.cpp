@@ -23,25 +23,12 @@
 
 #include <BWAPI/Unitset.h>
 
-#include <BW/CUnit.h>
-#include <BW/CBullet.h>
-#include <BW/Offsets.h>
-#include <BW/UnitTarget.h>
-#include <BW/OrderTypes.h>
-#include <BWAPI/Latency.h>
-#include <BW/TileType.h>
-#include <BW/TileSet.h>
 #include <BW/CheatType.h>
-#include <BW/Dialog.h>
+#include <BW/OrderTypes.h>
 
 #include "BWAPI/AIModule.h"
-#include "../DLLMain.h"
 #include "../Config.h"
-#include "../Detours.h"
-#include "../NewHackUtil.h"
 #include "BWtoBWAPI.h"
-
-#include "../BW/Pathing.h"
 
 #include "../../../Debug.h"
 
@@ -61,6 +48,7 @@ namespace BWAPI
   //----------------------------------------------------------------------------------------------------------
   Player GameImpl::getPlayer(int playerID) const
   {
+    if (!isInGame()) return (size_t)playerID < BW::PLAYER_COUNT ? players[playerID] : nullptr;
     return server.getPlayer(playerID);
   }
   //----------------------------------------------------------------------------------------------------------
@@ -74,7 +62,7 @@ namespace BWAPI
     if ( !this->isFlagEnabled(Flag::CompleteMapInformation) )
       return nullptr;
     int i = (unitIndex & 0x7FF);
-    if (i < BW::UNIT_ARRAY_MAX_LENGTH && this->unitArray[i]->canAccess())
+    if ((size_t)i < this->unitArray.size() && this->unitArray[i]->canAccess())
       return this->unitArray[i];
     return nullptr;
   }
@@ -83,7 +71,7 @@ namespace BWAPI
   {
     if (isReplay())
       return GameTypes::None;
-    return GameType(BW::BWDATA::gameType);
+    return GameType(bwgame.gameType());
   }
   //---------------------------------------------- GET LATENCY -----------------------------------------------
   int GameImpl::getLatency() const
@@ -94,7 +82,7 @@ namespace BWAPI
 
     if ( this->isBattleNet() )
     {
-      switch(BW::BWDATA::Latency)
+      switch(bwgame.Latency())
       {
         case 0:
           return BWAPI::Latency::BattlenetLow;
@@ -108,7 +96,7 @@ namespace BWAPI
     }
     else
     {
-      switch(BW::BWDATA::Latency)
+      switch(bwgame.Latency())
       {
         case 0:
           return BWAPI::Latency::LanLow;
@@ -129,7 +117,7 @@ namespace BWAPI
   //--------------------------------------------- GET REPLAY FRAME COUNT -------------------------------------
   int GameImpl::getReplayFrameCount() const
   {
-    return BW::BWDATA::ReplayHead.frameCount;
+    return bwgame.ReplayHead_frameCount();
   }
   //------------------------------------------------ GET FPS -------------------------------------------------
   int GameImpl::getFPS() const
@@ -146,7 +134,7 @@ namespace BWAPI
   {
     if ( !this->isFlagEnabled(BWAPI::Flag::UserInput) )
       return BWAPI::Positions::Unknown;
-    return BWAPI::Position(BW::BWDATA::Mouse.x, BW::BWDATA::Mouse.y);
+    return BWAPI::Position(bwgame.MouseX(), bwgame.MouseY());
   }
   //--------------------------------------------- GET MOUSE STATE --------------------------------------------
   bool GameImpl::getMouseState(MouseButton button) const
@@ -154,22 +142,24 @@ namespace BWAPI
     if ( !this->isFlagEnabled(BWAPI::Flag::UserInput) )
       return false;
 
-    int vkValue;
-    switch ( button )
-    {
-      case BWAPI::M_LEFT:
-        vkValue = VK_LBUTTON;
-        break;
-      case BWAPI::M_RIGHT:
-        vkValue = VK_RBUTTON;
-        break;
-      case BWAPI::M_MIDDLE:
-        vkValue = VK_MBUTTON;
-        break;
-      default:
-        return false;
-    }
-    return (GetKeyState(vkValue) & 0x80) > 0;
+    // fixme
+    return false;
+//    int vkValue;
+//    switch ( button )
+//    {
+//      case BWAPI::M_LEFT:
+//        vkValue = VK_LBUTTON;
+//        break;
+//      case BWAPI::M_RIGHT:
+//        vkValue = VK_RBUTTON;
+//        break;
+//      case BWAPI::M_MIDDLE:
+//        vkValue = VK_MBUTTON;
+//        break;
+//      default:
+//        return false;
+//    }
+//    return (GetKeyState(vkValue) & 0x80) > 0;
   }
   //---------------------------------------------- GET KEY STATE ---------------------------------------------
   bool GameImpl::getKeyState(Key key) const
@@ -180,14 +170,16 @@ namespace BWAPI
     if ( key < 0 || key >= K_MAX )
       return false;
 
-    return (GetKeyState(key) & 128) > 0;
+    // fixme
+    return false;
+    //return (GetKeyState(key) & 128) > 0;
   }
   //------------------------------------------- GET SCREEN POSITION ------------------------------------------
   BWAPI::Position GameImpl::getScreenPosition() const
   {
     if ( !this->isFlagEnabled(BWAPI::Flag::UserInput) )
       return BWAPI::Positions::Unknown;
-    return BWAPI::Position(BW::BWDATA::ScreenX, BW::BWDATA::ScreenY);
+    return BWAPI::Position(bwgame.ScreenX(), bwgame.ScreenY());
   }
   //------------------------------------------- SET SCREEN POSITION ------------------------------------------
   void GameImpl::setScreenPosition(int x, int y)
@@ -195,28 +187,29 @@ namespace BWAPI
     this->setLastError();
     if ( !data->hasGUI ) return;
 
-    Position scrSize(BW::BWDATA::GameScreenBuffer.width(), BW::BWDATA::GameScreenBuffer.height()-108);
-    Position mapSize( TilePosition(Map::getWidth(), Map::getHeight()) );
+    bwgame.setScreenPosition(x, y);
+//    Position scrSize(bwgame.GameScreenBuffer_width(), bwgame.GameScreenBuffer_height()-108);
+//    Position mapSize( TilePosition(map.getWidth(), map.getHeight()) );
 
-    // Sets the screen's position relative to the map
-    Position movePos(x,y);
-    movePos.setMin(0, 0);
-    movePos.setMax( mapSize - scrSize);
+//    // Sets the screen's position relative to the map
+//    Position movePos(x,y);
+//    movePos.setMin(0, 0);
+//    movePos.setMax( mapSize - scrSize);
 
-    movePos &= 0xFFFFFFF8;
-    BW::BWDATA::MoveToX = movePos.x;
-    BW::BWDATA::MoveToY = movePos.y;
-    BW::BWDATA::Game.screenTilePosition = BW::TilePosition(movePos);
-    BW::BWFXN_UpdateScreenPosition();
+//    movePos &= 0xFFFFFFF8;
+//    bwgame.MoveToX(movePos.x);
+//    bwgame.MoveToY(movePos.y);
+//    bwgame.Game_screenTilePosition() = BW::TilePosition(movePos);
+//    bwgame.BWFXN_UpdateScreenPosition();
   }
   //---------------------------------------------- PING MINIMAP ----------------------------------------------
   void GameImpl::pingMinimap(int x, int y)
   {
     this->setLastError();
-    QUEUE_COMMAND(BW::Orders::MinimapPing, x, y);
+    bwgame.QueueCommand<BW::Orders::MinimapPing>(x, y);
   }
   //--------------------------------------------- IS FLAG ENABLED --------------------------------------------
-  bool  GameImpl::isFlagEnabled(int flag) const
+  bool GameImpl::isFlagEnabled(int flag) const
   {
     // Check if index is valid
     if ( flag < 0 || flag >= BWAPI::Flag::Max ) 
@@ -278,9 +271,9 @@ namespace BWAPI
     Unitset unitFinderResults;
 
     // Have the unit finder do its stuff
-    Templates::iterateUnitFinder<BW::unitFinder>(BW::BWDATA::UnitOrderingX.data(),
-                                                 BW::BWDATA::UnitOrderingY.data(),
-                                                 BW::BWDATA::UnitOrderingCount,
+    Templates::iterateUnitFinder(bwgame.UnitOrderingX(),
+                                                 bwgame.UnitOrderingY(),
+                                                 bwgame.UnitOrderingCount(),
                                                  left,
                                                  top,
                                                  right,
@@ -296,22 +289,22 @@ namespace BWAPI
     int bestDistance = 99999999;
     Unit pBestUnit = nullptr;
 
-    Templates::iterateUnitFinder<BW::unitFinder>( BW::BWDATA::UnitOrderingX.data(),
-                                                  BW::BWDATA::UnitOrderingY.data(),
-                                                  BW::BWDATA::UnitOrderingCount,
-                                                  left,
-                                                  top,
-                                                  right,
-                                                  bottom,
-                                                  [&](Unit u){ if ( !pred.isValid() || pred(u) )
-                                                                {
-                                                                  int newDistance = u->getDistance(center);
-                                                                  if ( newDistance < bestDistance )
-                                                                  {
-                                                                    pBestUnit = u;
-                                                                    bestDistance = newDistance;
-                                                                  }
-                                                                } } );
+    Templates::iterateUnitFinder( bwgame.UnitOrderingX(),
+                                  bwgame.UnitOrderingY(),
+                                  bwgame.UnitOrderingCount(),
+                                  left,
+                                  top,
+                                  right,
+                                  bottom,
+                                  [&](Unit u){ if ( !pred.isValid() || pred(u) )
+                                                {
+                                                  int newDistance = u->getDistance(center);
+                                                  if ( newDistance < bestDistance )
+                                                  {
+                                                    pBestUnit = u;
+                                                    bestDistance = newDistance;
+                                                  }
+                                                } } );
     return pBestUnit;
   }
   Unit GameImpl::getBestUnit(const BestUnitFilter &best, const UnitFilter &pred, Position center, int radius) const
@@ -325,69 +318,69 @@ namespace BWAPI
     topLeft.makeValid();
     botRight.makeValid();
 
-    Templates::iterateUnitFinder<BW::unitFinder>( BW::BWDATA::UnitOrderingX.data(),
-                                                  BW::BWDATA::UnitOrderingY.data(),
-                                                  BW::BWDATA::UnitOrderingCount,
-                                                  topLeft.x,
-                                                  topLeft.y,
-                                                  botRight.x,
-                                                  botRight.y,
-                                                  [&](Unit u){ if ( !pred.isValid() || pred(u) )
-                                                                {
-                                                                  if ( pBestUnit == nullptr )
-                                                                    pBestUnit = u;
-                                                                  else
-                                                                    pBestUnit = best(pBestUnit,u); 
-                                                                } } );
+    Templates::iterateUnitFinder( bwgame.UnitOrderingX(),
+                                  bwgame.UnitOrderingY(),
+                                  bwgame.UnitOrderingCount(),
+                                  topLeft.x,
+                                  topLeft.y,
+                                  botRight.x,
+                                  botRight.y,
+                                  [&](Unit u){ if ( !pred.isValid() || pred(u) )
+                                                {
+                                                  if ( pBestUnit == nullptr )
+                                                    pBestUnit = u;
+                                                  else
+                                                    pBestUnit = best(pBestUnit,u); 
+                                                } } );
 
     return pBestUnit;
   }
   //----------------------------------------------- MAP WIDTH ------------------------------------------------
   int GameImpl::mapWidth() const
   {
-    return Map::getWidth();
+    return map.getWidth();
   }
   //----------------------------------------------- MAP HEIGHT -----------------------------------------------
   int GameImpl::mapHeight() const
   {
-    return Map::getHeight();
+    return map.getHeight();
   }
   //---------------------------------------------- MAP FILE NAME ---------------------------------------------
   std::string GameImpl::mapFileName() const
   {
-    return Map::getFileName();
+    return map.getFileName();
   }
   //---------------------------------------------- MAP PATH NAME ---------------------------------------------
   std::string GameImpl::mapPathName() const
   {
-    return Map::getPathName();
+    return map.getPathName();
   }
   //------------------------------------------------ MAP NAME ------------------------------------------------
   std::string GameImpl::mapName() const
   {
-    return Map::getName();
+    return map.getName();
   }
   //----------------------------------------------- GET MAP HASH ---------------------------------------------
   std::string GameImpl::mapHash() const
   {
-    return Map::getMapHash();
+    return map.getMapHash();
   }
   //--------------------------------------------- IS WALKABLE ------------------------------------------------
   bool GameImpl::isWalkable(int x, int y) const
   {
-    return Map::walkable(x, y);
+    return map.walkable(x, y);
   }
   //--------------------------------------------- GET GROUND HEIGHT ------------------------------------------
   int GameImpl::getGroundHeight(int x, int y) const
   {
-    return Map::groundHeight(x, y);
+    return map.groundHeight(x, y);
   }
   //--------------------------------------------- IS BUILDABLE -----------------------------------------------
   bool GameImpl::isBuildable(int x, int y, bool includeBuildings) const
   {
-    if ( Map::buildable(x,y) )
+    if ( map.buildable(x,y) )
     {
-      if ( includeBuildings && this->isVisible(x,y) && Map::isOccupied(x,y) )
+      if ( includeBuildings && this->isVisible(x,y) && map.isOccupied(x,y) )
         return false;
       return true;
     }
@@ -396,19 +389,19 @@ namespace BWAPI
   //--------------------------------------------- IS VISIBLE -------------------------------------------------
   bool GameImpl::isVisible(int x, int y) const
   {
-    return Map::visible(x, y);
+    return map.visible(x, y);
   }
   //--------------------------------------------- IS EXPLORED ------------------------------------------------
   bool GameImpl::isExplored(int x, int y) const
   {
-    return Map::isExplored(x, y);
+    return map.isExplored(x, y);
   }
   //--------------------------------------------- HAS CREEP --------------------------------------------------
   bool GameImpl::hasCreep(int x, int y) const
   {
     if (!this->isFlagEnabled(Flag::CompleteMapInformation) && !this->isVisible(x, y))
       return false;
-    return Map::hasCreep(x, y);
+    return map.hasCreep(x, y);
   }
   //--------------------------------------------- HAS POWER --------------------------------------------------
   bool GameImpl::hasPowerPrecise(int x, int y, UnitType unitType) const
@@ -419,7 +412,7 @@ namespace BWAPI
   void GameImpl::vPrintf(const char *format, va_list arg)
   {
     // nogui & safety
-    if ( !data->hasGUI ) return;
+    //if ( !data->hasGUI ) return;
     if ( !format ) return;
     
     // Expand format into buffer
@@ -428,10 +421,13 @@ namespace BWAPI
 
     if ( !this->tournamentCheck(Tournament::Printf, buffer) )
       return;
+    
+    bwgame.printText(buffer);
 
     // Dispatch message using existing Storm library function (lobby+game)
-    S_EVT evt = { 4, -1, buffer, strlen(buffer) + 1 };
-    SEvtDispatch('SNET', 1, 4, &evt);
+//    S_EVT evt = { 4, -1, buffer, strlen(buffer) + 1 };
+//    SEvtDispatch('SNET', 1, 4, &evt);
+    // fixme
   }
   //--------------------------------------------- SEND TEXT --------------------------------------------------
   void GameImpl::vSendTextEx(bool toAllies, const char *format, va_list arg)
@@ -449,7 +445,8 @@ namespace BWAPI
 
     if ( buffer[0] == '/' )    // If we expect a battle.net command
     {
-      SNetSendServerChatCommand(buffer);
+      //SNetSendServerChatCommand(buffer);
+      // fixme
       return;
     }
 
@@ -466,7 +463,7 @@ namespace BWAPI
       if ( cheatID != BW::CheatFlags::None )  // Apply cheat code if it is one
       {
         this->cheatFlags ^= cheatID;
-        QUEUE_COMMAND(BW::Orders::UseCheat, this->cheatFlags);
+        bwgame.QueueCommand<BW::Orders::UseCheat>(this->cheatFlags);
         if (cheatID == BW::CheatFlags::ShowMeTheMoney ||
             cheatID == BW::CheatFlags::BreatheDeep ||
             cheatID == BW::CheatFlags::WhatsMineIsMine ||
@@ -481,30 +478,31 @@ namespace BWAPI
     } // single
     else  // multiplayer or lobby
     {
-      // Otherwise, send the message using Storm command
-      char szMessage[82];
-      szMessage[0] = 0;
-      szMessage[1] = 1;
-      int msgLen = SStrCopy(&szMessage[2], buffer, 80);
+      // fixme
+//      // Otherwise, send the message using Storm command
+//      char szMessage[82];
+//      szMessage[0] = 0;
+//      szMessage[1] = 1;
+//      int msgLen = SStrCopy(&szMessage[2], buffer, 80);
 
-      if ( this->isInGame() )    // in game
-      {
-        if ( toAllies ) // Send to all allies
-        {
-          for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
-            if ( this->BWAPIPlayer->isAlly(players[i]) && BW::BWDATA::Players[i].dwStormId != -1 )
-              SNetSendMessage(BW::BWDATA::Players[i].dwStormId, szMessage, msgLen + 3);
-        }
-        else  // Otherwise send to all
-        {
-          SNetSendMessage(-1, szMessage, msgLen + 3);
-        } // toAllies
-      }
-      else  // assume in lobby, then send lobby message
-      {
-        szMessage[1] = 0x4C;
-        SNetSendMessage(-1, &szMessage[1], msgLen + 2);
-      } // isInGame
+//      if ( this->isInGame() )    // in game
+//      {
+//        if ( toAllies ) // Send to all allies
+//        {
+//          for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
+//            if ( this->BWAPIPlayer->isAlly(players[i]) && BW::BWDATA::Players[i].dwStormId != -1 )
+//              SNetSendMessage(BW::BWDATA::Players[i].dwStormId, szMessage, msgLen + 3);
+//        }
+//        else  // Otherwise send to all
+//        {
+//          SNetSendMessage(-1, szMessage, msgLen + 3);
+//        } // toAllies
+//      }
+//      else  // assume in lobby, then send lobby message
+//      {
+//        szMessage[1] = 0x4C;
+//        SNetSendMessage(-1, &szMessage[1], msgLen + 2);
+//      } // isInGame
     } // multi
   }
   //------------------------------------------------ IS IN GAME ----------------------------------------------
@@ -515,28 +513,29 @@ namespace BWAPI
   //-------------------------------------------- IS SINGLE PLAYER --------------------------------------------
   bool GameImpl::isMultiplayer() const
   {
-    return BW::BWDATA::NetMode != 0 && BW::BWDATA::NetMode != -1;
+    return bwgame.NetMode() != 0 && bwgame.NetMode() != -1;
   }
   //--------------------------------------------- IS BATTLE NET ----------------------------------------------
   bool GameImpl::isBattleNet() const
   {
-    return BW::BWDATA::NetMode == 'BNET';
+    return bwgame.NetMode() == 0x424e4554; // "BNET"
   }
   //----------------------------------------------- IS PAUSED ------------------------------------------------
   bool GameImpl::isPaused() const
   {
-    return BW::BWDATA::isGamePaused != 0;
+    return bwgame.isGamePaused() != 0;
   }
   //----------------------------------------------- IN REPLAY ------------------------------------------------
   bool  GameImpl::isReplay() const
   {
-    return BW::BWDATA::InReplay != 0;
+    return bwgame.InReplay() != 0;
   }
   //----------------------------------------------- START GAME -----------------------------------------------
   void GameImpl::_startGame()
   {
+    throw std::runtime_error("_startGame fixme");
     // Starts the game as a lobby host 
-    QUEUE_COMMAND(BW::Orders::StartGame);
+    //bwgame.QueueCommand<BW::Orders::StartGame>();
   }
   //----------------------------------------------- PAUSE GAME -----------------------------------------------
   void GameImpl::pauseGame()
@@ -545,7 +544,7 @@ namespace BWAPI
     this->setLastError();
     if ( !this->tournamentCheck(Tournament::PauseGame) )
       return;
-    QUEUE_COMMAND(BW::Orders::PauseGame);
+    bwgame.QueueCommand<BW::Orders::PauseGame>();
   }
   //---------------------------------------------- RESUME GAME -----------------------------------------------
   void GameImpl::resumeGame()
@@ -554,7 +553,7 @@ namespace BWAPI
     this->setLastError();
     if ( !this->tournamentCheck(Tournament::ResumeGame) )
       return;
-    QUEUE_COMMAND(BW::Orders::ResumeGame);
+    bwgame.QueueCommand<BW::Orders::ResumeGame>();
   }
   //---------------------------------------------- LEAVE GAME ------------------------------------------------
   void GameImpl::leaveGame()
@@ -563,8 +562,7 @@ namespace BWAPI
     this->setLastError();
     if ( !this->tournamentCheck(Tournament::LeaveGame) )
       return;
-    BW::BWDATA::GameState      = 0;
-    BW::BWDATA::gwNextGameMode = 6;
+    bwgame.leaveGame();
   }
   //--------------------------------------------- RESTART GAME -----------------------------------------------
   void GameImpl::restartGame()
@@ -578,7 +576,7 @@ namespace BWAPI
     }
 
     this->setLastError();
-    QUEUE_COMMAND(BW::Orders::RestartGame);
+    bwgame.QueueCommand<BW::Orders::RestartGame>();
   }
   //--------------------------------------------- SET ALLIANCE -----------------------------------------------
   bool GameImpl::setAlliance(BWAPI::Player player, bool allied, bool alliedVictory)
@@ -589,14 +587,14 @@ namespace BWAPI
 
     u32 alliance = 0;
     for (int i = 0; i < BW::PLAYER_COUNT; ++i)
-      alliance |= (BW::BWDATA::Game.playerAlliances[BWAPIPlayer->getIndex()][i] & 3) << (i*2);
+      alliance |= (bwgame.getPlayer(BWAPIPlayer->getIndex()).playerAlliances(i) & 3) << (i*2);
     
     u8 newAlliance = allied ? (alliedVictory ? 2 : 1) : 0;
     if ( allied )
       alliance |= newAlliance << ( static_cast<PlayerImpl*>(player)->getIndex()*2);
     else
       alliance &= ~(3 << ( static_cast<PlayerImpl*>(player)->getIndex()*2) );
-    QUEUE_COMMAND(BW::Orders::SetAllies, alliance);
+    bwgame.QueueCommand<BW::Orders::SetAllies>(alliance);
     return this->setLastError();
   }
   //----------------------------------------------- SET VISION -----------------------------------------------
@@ -607,24 +605,24 @@ namespace BWAPI
 
     if ( this->isReplay() )
     {
-      u32 vision = BW::BWDATA::ReplayVision;
+      u32 vision = bwgame.ReplayVision();
       if ( enabled )
         vision |= 1 << static_cast<PlayerImpl*>(player)->getIndex();
       else
         vision &= ~(1 <<  static_cast<PlayerImpl*>(player)->getIndex() );
-      BW::BWDATA::ReplayVision = vision;
+      bwgame.setReplayVision(vision);
     }
     else
     {
       if ( !BWAPIPlayer || player == BWAPIPlayer )
         return this->setLastError(Errors::Invalid_Parameter);
 
-      u16 vision = static_cast<u16>(BW::BWDATA::Game.playerVision[BWAPIPlayer->getIndex()]);
+      u16 vision = static_cast<u16>(bwgame.getPlayer(BWAPIPlayer->getIndex()).playerVision());
       if ( enabled )
         vision |= 1 << static_cast<PlayerImpl*>(player)->getIndex();
       else
         vision &= ~(1 <<  static_cast<PlayerImpl*>(player)->getIndex() );
-      QUEUE_COMMAND(BW::Orders::SetVision, vision);
+      bwgame.QueueCommand<BW::Orders::SetVision>(vision);
     }
     return this->setLastError();
   }
@@ -644,8 +642,8 @@ namespace BWAPI
       // Reset the speed if it is negative
       for (int i = 0; i < BW::NUM_SPEEDS; ++i)
       {
-        BW::BWDATA::GameSpeedModifiers.gameSpeedModifiers[i] = BW::OriginalSpeedModifiers[i];
-        BW::BWDATA::GameSpeedModifiers.altSpeedModifiers[i] = BW::OriginalSpeedModifiers[i] * 3;
+        bwgame.setGameSpeedModifiers(i, BW::OriginalSpeedModifiers[i]);
+        bwgame.setAltSpeedModifiers(i, BW::OriginalSpeedModifiers[i] * 3);
       }
     }
     else
@@ -653,8 +651,8 @@ namespace BWAPI
       // Set all speeds if it is positive
       for (int i = 0; i < BW::NUM_SPEEDS; ++i)
       {
-        BW::BWDATA::GameSpeedModifiers.gameSpeedModifiers[i] = speed;
-        BW::BWDATA::GameSpeedModifiers.altSpeedModifiers[i] = speed * 3;
+        bwgame.setGameSpeedModifiers(i, speed);
+        bwgame.setAltSpeedModifiers(i, speed * 3);
       }
     }
   }
@@ -666,7 +664,7 @@ namespace BWAPI
 
     if ( frameSkip > 0 )
     {
-      BW::BWDATA::FrameSkip = frameSkip;
+      bwgame.setFrameSkip(frameSkip);
       return;
     }
     setLastError(Errors::Invalid_Parameter);
@@ -727,7 +725,7 @@ namespace BWAPI
       {
         // Select the unit group
         BW::Orders::Select sel(v);
-        QueueGameCommand(&sel, sel.size());
+        bwgame.QueueCommand(&sel, sel.size());
         apmCounter.addSelect();
       }
 
@@ -780,28 +778,19 @@ namespace BWAPI
   //--------------------------------------------------- LATENCY ----------------------------------------------
   int GameImpl::getLatencyFrames() const
   {
-    DWORD dwCallDelay = 1;
-    if ( BW::BWDATA::NetMode )
-    {
-      CAPS caps;
-      caps.dwSize = sizeof(CAPS);
-      SNetGetProviderCaps(&caps);
-
-      dwCallDelay = Util::clamp<int>(caps.dwCallDelay, 2, 8);
-    }
-    return (BW::BWDATA::LatencyFrames[BW::BWDATA::GameSpeed]) * (BW::BWDATA::Latency + dwCallDelay + 1);
+    return bwgame.getLatencyFrames();
   }
   int GameImpl::getLatencyTime() const
   {
-    return getLatencyFrames() * BW::BWDATA::GameSpeedModifiers.gameSpeedModifiers[BW::BWDATA::GameSpeed];
+    return getLatencyFrames() * bwgame.gameSpeedModifiers(bwgame.GameSpeed());
   }
   int GameImpl::getRemainingLatencyFrames() const
   {
-    return getLatencyFrames() - (this->getFrameCount() - lastTurnFrame);
+    return getLatencyFrames() - (this->elapsedTime() - bwgame.lastTurnFrame());
   }
   int GameImpl::getRemainingLatencyTime() const
   {
-    return (getLatencyFrames() * BW::BWDATA::GameSpeedModifiers.gameSpeedModifiers[BW::BWDATA::GameSpeed]) - (GetTickCount() - lastTurnTime);
+    return getRemainingLatencyFrames() * bwgame.gameSpeedModifiers(bwgame.GameSpeed());
   }
   //--------------------------------------------------- VERSION ----------------------------------------------
   int GameImpl::getRevision() const
@@ -830,7 +819,7 @@ namespace BWAPI
   //----------------------------------------------- GET INSTANCE ID ------------------------------------------
   int GameImpl::getInstanceNumber() const
   {
-    return (int)gdwProcNum;
+    return bwgame.getInstanceNumber();
   }
   //---------------------------------------------------- GET APM ---------------------------------------------
   int GameImpl::getAPM(bool includeSelects) const
@@ -840,7 +829,7 @@ namespace BWAPI
   //---------------------------------------------------- SET MAP ---------------------------------------------
   bool GameImpl::setMap(const char *mapFileName)
   {
-    if ( !mapFileName || strlen(mapFileName) >= std::extent<decltype(BW::BWDATA::Game.mapFileName)>::value || !mapFileName[0] )
+    if ( !mapFileName || !mapFileName[0] )
       return setLastError(Errors::Invalid_Parameter);
 
     if ( !std::ifstream(mapFileName).is_open() )
@@ -849,14 +838,15 @@ namespace BWAPI
     if ( !this->tournamentCheck(Tournament::SetMap, (void*)mapFileName) )
       return setLastError(Errors::None);
 
+    if ( !bwgame.setMapFileName(mapFileName) )
+      return setLastError(Errors::Invalid_Parameter);
 
-    strcpy(BW::BWDATA::Game.mapFileName, mapFileName);
     return setLastError(Errors::None);
   }
   //------------------------------------------------- ELAPSED TIME -------------------------------------------
   int GameImpl::elapsedTime() const
   {
-    return BW::BWDATA::Game.elapsedTime;
+    return bwgame.elapsedTime();
   }
   //-------------------------------------- SET COMMAND OPTIMIZATION LEVEL ------------------------------------
   void GameImpl::setCommandOptimizationLevel(int level)
@@ -869,7 +859,7 @@ namespace BWAPI
   //----------------------------------------------- COUNTDOWN TIMER ------------------------------------------
   int GameImpl::countdownTimer() const
   {
-    return BW::BWDATA::Game.countdownTimer;
+    return bwgame.countdownTimer();
   }
   //------------------------------------------------- GET REGION AT ------------------------------------------
   BWAPI::Region GameImpl::getRegionAt(int x, int y) const
@@ -880,13 +870,13 @@ namespace BWAPI
       this->setLastError(BWAPI::Errors::Invalid_Parameter);
       return nullptr;
     }
-    const BW::region * const rgn = BW::getRegionAt(x,y);
+    BW::Region rgn = bwgame.getRegionAt(x,y);
     if ( !rgn )
     {
       this->setLastError(BWAPI::Errors::Invalid_Parameter);
       return nullptr;
     }
-    return getRegion(rgn->getIndex());
+    return getRegion(rgn.getIndex());
   }
   int GameImpl::getLastEventTime() const
   {
@@ -896,13 +886,80 @@ namespace BWAPI
   {
     if ( !isReplay() )
       return this->setLastError(Errors::Invalid_Parameter);
-    BW::BWDATA::ReplayRevealAll = reveal ? 1 : 0;
+    bwgame.setReplayRevealAll(reveal);
     return this->setLastError();
   }
   //-------------------------------------------------- GET RANDOM SEED ---------------------------------------
   unsigned GameImpl::getRandomSeed() const
   {
-    return BW::BWDATA::ReplayHead.gameSeed.randSeed;
+    return bwgame.ReplayHead_gameSeed_randSeed();
   }
-};
+  void GameImpl::setCharacterName(const std::string& name)
+  {
+    if (isInGame()) return;
+    bwgame.setCharacterName(name);
+  }
+  void GameImpl::setGameType(GameType gameType)
+  {
+    if (isInGame()) return;
+    if (gameType == GameTypes::Melee) bwgame.setGameTypeMelee();
+    else if (gameType == GameTypes::Use_Map_Settings) bwgame.setGameTypeUseMapSettings();
+    else throw std::runtime_error("setGameType: the specified game type is currently not supported :(");
+  }
+  void GameImpl::setAIModule(AIModule* module)
+  {
+    this->specifiedModule = module;
+  }
+  void GameImpl::createSinglePlayerGame(std::function<void()> setupFunction)
+  {
+    bwgame.createSinglePlayerGame([&]() {
+      bwgame.enableCheats();
+      playerSet.clear();
+      BWAPIPlayer = nullptr;
+      for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
+      {
+        lastKnownRaceBeforeStart[i] = Race(bwgame.getPlayer(i).nRace());
+        playerSet.insert(this->players[i]);
+        if (i == bwgame.g_LocalHumanID()) BWAPIPlayer = this->players[i];
+      }
+      setupFunction();
+      for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
+        lastKnownRaceBeforeStart[i] = Race(bwgame.getPlayer(i).nRace());
+      playerSet.clear();
+      BWAPIPlayer = nullptr;
+    });
+  }
+  void GameImpl::createMultiPlayerGame(std::function<void()> setupFunction)
+  {
+    bwgame.createMultiPlayerGame([&]() {
+      playerSet.clear();
+      BWAPIPlayer = nullptr;
+      for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
+      {
+        lastKnownRaceBeforeStart[i] = Race(bwgame.getPlayer(i).nRace());
+        this->players[i]->setID(i);
+        playerSet.insert(this->players[i]);
+        if (i == bwgame.g_LocalHumanID()) BWAPIPlayer = this->players[i];
+      }
+      setupFunction();
+      for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
+      {
+        this->players[i]->setID(-1);
+        lastKnownRaceBeforeStart[i] = Race(bwgame.getPlayer(i).nRace());
+      }
+      playerSet.clear();
+      BWAPIPlayer = nullptr;
+    });
+  }
+  void GameImpl::startGame()
+  {
+    bwgame.startGame();
+  }
+  void GameImpl::switchToPlayer(Player p)
+  {
+    if (!isInGame()) {
+      bwgame.switchToSlot(((PlayerImpl*)p)->getIndex());
+    }
+  }
+}
 

@@ -34,3 +34,7 @@ typedef struct __rect
 {
   s16 left, top, right, bottom;
 } rect;
+
+#ifndef _WIN32
+using HMODULE = void*;
+#endif

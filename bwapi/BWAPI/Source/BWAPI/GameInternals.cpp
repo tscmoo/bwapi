@@ -3,9 +3,6 @@
 #include <string>
 
 #include "../WMode.h"
-#include "../Detours.h"
-#include "../DLLMain.h"
-#include "../Resolution.h"
 
 #include <BWAPI/BWtoBWAPI.h>
 #include <BWAPI/UnitImpl.h>
@@ -14,12 +11,19 @@
 #include <BWAPI/RegionImpl.h>
 #include "Command.h"
 
-#include <BW/CBullet.h>
-#include <BW/CUnit.h>
-#include <BW/Dialog.h>
-#include <BW/Offsets.h>
-
 #include "../../../Debug.h"
+
+#include "BW/BWData.h"
+
+#include <chrono>
+#include <type_traits>
+#include <stdexcept>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 /*
   This files holds all functions of the GameImpl class that are not part of the Game interface.
@@ -27,10 +31,52 @@
 
 namespace BWAPI
 {
-  GameImpl BroodwarImpl;
+  struct BroodwarImpl_storage_t {
+    std::aligned_storage<sizeof(GameImpl), alignof(GameImpl)>::type buf;
+    bool inited;
+    ~BroodwarImpl_storage_t() {
+      if (inited) (**this).~GameImpl();
+    }
+    GameImpl& operator*() {
+      return *(GameImpl*)&buf;
+    }
+    template<typename... args_T>
+    void construct(args_T&&... args) {
+      if (inited) throw std::runtime_error("BroodwarImpl_storage_t::construct:: already constructed");
+      inited = true;
+      new ((GameImpl*)&buf) GameImpl(std::forward<args_T>(args)...);
+    }
+    void destroy() {
+      if (!inited) throw std::runtime_error("BroodwarImpl_storage_t::destroy:: not constructed");
+      inited = false;
+      (**this).~GameImpl();
+    }
+  };
+  BroodwarImpl_storage_t BroodwarImpl_storage;
+  GameImpl& BroodwarImpl = (GameImpl&)BroodwarImpl_storage.buf;
+  
+  BroodwarImpl_handle::BroodwarImpl_handle(BW::Game bwgame) {
+    BroodwarImpl_storage.construct(bwgame);
+  }
+  BroodwarImpl_handle::~BroodwarImpl_handle() {
+    BroodwarImpl_storage.destroy();
+  }
+  
+  GameImpl& BroodwarImpl_handle::operator*()
+  {
+    return BroodwarImpl;
+  }
+  
+  GameImpl* BroodwarImpl_handle::operator->()
+  {
+    return &BroodwarImpl;
+  }
 
   //---------------------------------------------- CONSTRUCTOR -----------------------------------------------
-  GameImpl::GameImpl()
+  GameImpl::GameImpl(BW::Game bwgame) :
+    bwgame(bwgame)
+    , map(bwgame)
+    , autoMenuManager(bwgame)
   {
     BWAPI::BroodwarPtr = static_cast<Game*>(this);
 
@@ -38,15 +84,15 @@ namespace BWAPI
 
     // iterate through players and create PlayerImpl for each
     for (u8 i = 0; i < BW::PLAYER_COUNT; ++i)
-      players[i] = new PlayerImpl(i);
+      players[i] = new PlayerImpl(i, bwgame.getPlayer(i));
 
     // iterate through units and create UnitImpl for each
     for (u16 i = 0; i < BW::UNIT_ARRAY_MAX_LENGTH; ++i)
-      unitArray[i] = new UnitImpl(&BW::BWDATA::UnitNodeTable[i], i);
+      unitArray[i] = new UnitImpl(bwgame.getUnit((size_t)i), i);
 
     // iterate through bullets and create BulletImpl for each
     for (u16 i = 0; i < BW::BULLET_ARRAY_MAX_LENGTH; ++i)
-      bulletArray[i] = new BulletImpl(&BW::BWDATA::BulletNodeTable[i], i);
+      bulletArray[i] = new BulletImpl(bwgame.getBullet((size_t)i));
 
     this->initializeData();
   }
@@ -63,7 +109,7 @@ namespace BWAPI
     unitArray.fill(nullptr);
 
     // destroy all PlayerImpl
-    for (int i = 0; i < std::extent<decltype(players)>::value; ++i)
+    for (size_t i = 0; i < std::extent<decltype(players)>::value; ++i)
     {
       if (players[i]) delete players[i];
       players[i] = nullptr;
@@ -84,31 +130,33 @@ namespace BWAPI
       if (u) u->setSelected(false);
     }
 
-    selectedUnitSet.clear();
-    for (int i = 0; i < BW::BWDATA::ClientSelectionCount && i < BW::MAX_SELECTION_COUNT; ++i)
-    {
-      BWAPI::UnitImpl *u = UnitImpl::BWUnitToBWAPIUnit(BW::BWDATA::ClientSelectionGroup[i]);
-      if (u)
-      {
-        u->setSelected(true);
-        selectedUnitSet.insert(u);
-      }
-    }
+    // fixme
+//    selectedUnitSet.clear();
+//    for (int i = 0; i < BW::BWDATA::ClientSelectionCount && i < BW::MAX_SELECTION_COUNT; ++i)
+//    {
+//      BWAPI::UnitImpl *u = UnitImpl::BWUnitToBWAPIUnit(BW::BWDATA::ClientSelectionGroup[i]);
+//      if (u)
+//      {
+//        u->setSelected(true);
+//        selectedUnitSet.insert(u);
+//      }
+//    }
   }
   void GameImpl::dropPlayers()
   {
-    for ( int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i )
-    {
-      if ( BW::BWDATA::playerStatusArray[i] & 0x10000 )
-      {
-        int iplr = this->stormIdToPlayerId(i);
-        if ( iplr != -1 && iplr != BW::BWDATA::g_LocalHumanID )
-        {
-          this->droppedPlayers.push_back(this->players[iplr]);
-          SNetDropPlayer(i, 0x40000006);  // The value used when dropping
-        }
-      }
-    }
+    // fixme
+//    for ( int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i )
+//    {
+//      if ( BW::BWDATA::playerStatusArray[i] & 0x10000 )
+//      {
+//        int iplr = this->stormIdToPlayerId(i);
+//        if ( iplr != -1 && iplr != BW::BWDATA::g_LocalHumanID )
+//        {
+//          this->droppedPlayers.push_back(this->players[iplr]);
+//          SNetDropPlayer(i, 0x40000006);  // The value used when dropping
+//        }
+//      }
+//    }
   }
   //------------------------------------------------ MOUSE/KEY INPUT -----------------------------------------
   void GameImpl::pressKey(int key)
@@ -119,27 +167,28 @@ namespace BWAPI
       return;
 
     // Press and release the key
-    PostMessage(SDrawGetFrameWindow(), WM_CHAR, (WPARAM)key, NULL);
+    //PostMessage(SDrawGetFrameWindow(), WM_CHAR, (WPARAM)key, NULL);
   }
   void GameImpl::mouseDown(int x, int y)
   {
     // Press the left mouse button
-    PostMessage(SDrawGetFrameWindow(), WM_LBUTTONDOWN, NULL, (LPARAM)MAKELONG(x,y));
+    //PostMessage(SDrawGetFrameWindow(), WM_LBUTTONDOWN, NULL, (LPARAM)MAKELONG(x,y));
   }
   void GameImpl::mouseUp(int x, int y)
   {
     // Release the left mouse button
-    PostMessage(SDrawGetFrameWindow(), WM_LBUTTONUP, NULL, (LPARAM)MAKELONG(x,y));
+    //PostMessage(SDrawGetFrameWindow(), WM_LBUTTONUP, NULL, (LPARAM)MAKELONG(x,y));
   }
   //------------------------------------------- PLAYER ID CONVERT --------------------------------------------
   int GameImpl::stormIdToPlayerId(int dwStormId)
   {
     /* Translates a storm ID to a player Index */
-    for (int i = 0; i < BW::PLAYER_COUNT; ++i)
-    {
-      if ( BW::BWDATA::Players[i].dwStormId == dwStormId )
-        return i;
-    }
+    // fixme
+//    for (int i = 0; i < BW::PLAYER_COUNT; ++i)
+//    {
+//      if ( BW::BWDATA::Players[i].dwStormId == dwStormId )
+//        return i;
+//    }
     return -1;
   }
   //----------------------------------------------- PARSE TEXT -----------------------------------------------
@@ -200,7 +249,7 @@ namespace BWAPI
     }
     else if (cmd == "/wmode")
     {
-      SetWMode(BW::BWDATA::GameScreenBuffer.width(), BW::BWDATA::GameScreenBuffer.height(), !wmode);
+      //SetWMode(BW::BWDATA::GameScreenBuffer.width(), BW::BWDATA::GameScreenBuffer.height(), !wmode);
       Broodwar << "Toggled windowed mode." << std::endl;
     }
     else if (cmd == "/grid")
@@ -268,7 +317,7 @@ namespace BWAPI
   }
   int GameImpl::_currentPlayerId()
   {
-    return BW::BWDATA::g_LocalHumanID;
+    return bwgame.g_LocalHumanID();
   }
   bool GameImpl::tournamentCheck(Tournament::ActionID type, void *parameter)
   {
@@ -293,7 +342,7 @@ namespace BWAPI
     this->enemyPlayer = nullptr;
 
     // Set random seed
-    srand(GetTickCount());
+    srand((unsigned)std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
     // clear all sets
     this->aliveUnits.clear();
@@ -367,7 +416,7 @@ namespace BWAPI
       u->setID(-1);
     }
 
-    BulletImpl::nextId = 0;
+    this->bulletNextId = 0;
     this->cheatFlags  = 0;
     //this->frameCount  = -1;
     this->frameCount = 0;
@@ -393,14 +442,18 @@ namespace BWAPI
     // Destroy the AI Module client
     if ( this->client )
     {
-      delete this->client;
+      if (this->deleteClient) delete this->client;
       this->client = nullptr;
     }
 
     // Unload the AI Module library
     if ( hAIModule )
     {
-      FreeLibrary(hAIModule);
+#ifdef _WIN32
+      FreeLibrary((HMODULE)hAIModule);
+#else
+      dlclose(hAIModule);
+#endif
       hAIModule = nullptr;
     }
 
@@ -423,7 +476,11 @@ namespace BWAPI
     // Destroy the Tournament Module Library
     if ( hTournamentModule )
     {
-      FreeLibrary(hTournamentModule);
+#ifdef _WIN32
+      FreeLibrary((HMODULE)hTournamentModule);
+#else
+      dlclose(hTournamentModule);
+#endif
       hTournamentModule = nullptr;
     }
 

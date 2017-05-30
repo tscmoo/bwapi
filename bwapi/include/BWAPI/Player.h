@@ -644,5 +644,9 @@ namespace BWAPI
     ///
     /// @since 4.1.2
     bool hasUnitTypeRequirement(UnitType unit, int amount = 1) const;
+    
+    virtual void setRace(Race race) = 0;
+    virtual void closeSlot() = 0;
+    virtual void openSlot() = 0;
   };
 };

@@ -79,7 +79,7 @@ namespace BWAPI
   }
   void Unitset::setClientInfo(int clientInfo, int index) const
   {
-    this->setClientInfo((void*)clientInfo, index);
+    this->setClientInfo((void*)(uintptr_t)clientInfo, index);
   }
 
   Unitset Unitset::getUnitsInRadius(int radius, const UnitFilter &pred) const

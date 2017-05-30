@@ -1,7 +1,5 @@
 #include <string>
-#include <windows.h>
-#include <tlhelp32.h>
-#include <storm.h>
+#include <vector>
 
 #include <Util/StringUtil.h>
 
@@ -15,27 +13,75 @@ bool isCorrectVersion = true;
 bool showWarn         = true;
 bool serverEnabled    = true;
 
-unsigned gdwProcNum = 1;
-
-//--------------------------------------------- GET PROC COUNT -----------------------------------------------
-// Found/modified this from some random help board
-DWORD getProcessCount(const char *pszProcName)
-{
-  PROCESSENTRY32 pe32;
-  pe32.dwSize = sizeof(PROCESSENTRY32);
-
-  DWORD dwCount = 0;
-  HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-  if ( Process32First(hSnapshot, &pe32) )
-  {
-    do
-    {
-      if( _strcmpi(pe32.szExeFile, pszProcName) == 0 )
-        ++dwCount;
-    } while( Process32Next(hSnapshot, &pe32) );
+std::string readIni(const std::string& filename, const std::string& section, const std::string& key) {
+  FILE* f = fopen(filename.c_str(), "rb");
+  if (!f) return {};
+  std::vector<char> data;
+  fseek(f, 0, SEEK_END);
+  long filesize = ftell(f);
+  data.resize(filesize);
+  fseek(f, 0, SEEK_SET);
+  data.resize(data.size() * fread(data.data(), filesize, 1, f));
+  fclose(f);
+  bool correct_section = section.empty();
+  const char* c = data.data();
+  const char* e = c + data.size();
+  auto whitespace = [&]() {
+    switch (*c) {
+    case ' ': case '\t': case '\v': case '\f': case '\r':
+      return true;
+    default:
+      return false;
+    }
+  };
+  while (c != e) {
+    while (c != e && (whitespace() || *c == '\n')) ++c;
+    if (c == e) break;
+    if (*c == '#' || *c == ';') {
+      while (c != e && *c != '\n') ++c;
+    } else if (*c == '[') {
+      correct_section = false;
+      ++c;
+      const char* n = c;
+      while (c != e && *c != ']' && *c != '\n') {
+        ++c;
+      }
+      if (!section.compare(0, section.size(), n, c - n)) correct_section = true;
+      if (c != e) ++c;
+    } else {
+      const char* n = c;
+      while (c != e && !whitespace() && *c != '=' && *c != '\n') {
+        ++c;
+      }
+      if (c != e) {
+        if (correct_section && !key.compare(0, key.size(), n, c - n)) {
+          while (c != e && whitespace()) ++c;
+          if (c != e && *c == '=') {
+            ++c;
+            while (c != e && whitespace()) ++c;
+            n = c;
+            while (c != e && *c != '\r' && *c != '\n') ++c;
+            return std::string(n, c - n);
+          }
+        } else {
+          while (c != e && *c != '\n') ++c;
+        }
+      }
+    }
   }
-  CloseHandle(hSnapshot);
-  return dwCount;
+  return {};
+}
+
+std::string readIniString(const std::string& section, const std::string& key, const std::string& default_, const std::string& filename) {
+  auto s = readIni(filename, section, key);
+  if (s.empty()) s = default_;
+  return s;
+}
+
+int readIniInt(const std::string& section, const std::string& key, int default_, const std::string& filename) {
+  auto s = readIni(filename, section, key);
+  if (s.empty()) return default_;
+  return (int)std::atoi(s.c_str());
 }
 
 //----------------------------- LOAD CONFIG FXNS ------------------------------------------
@@ -45,9 +91,7 @@ std::string envKeyName(const char *pszKey, const char *pszItem)
 }
 std::string LoadConfigStringFromFile(const char *pszKey, const char *pszItem, const char *pszDefault)
 {
-  char buffer[MAX_PATH];
-  GetPrivateProfileStringA(pszKey, pszItem, pszDefault ? pszDefault : "", buffer, MAX_PATH, configPath().c_str());
-  return std::string(buffer);
+  return readIniString(pszKey, pszItem, pszDefault ? pszDefault : "", configPath());
 }
 std::string LoadConfigString(const char *pszKey, const char *pszItem, const char *pszDefault)
 {
@@ -68,14 +112,15 @@ int LoadConfigInt(const char *pszKey, const char *pszItem, const int iDefault)
   if (char* v = std::getenv(envKey.c_str()))
     return std::stoi(v);
   else
-    return GetPrivateProfileIntA(pszKey, pszItem, iDefault, configPath().c_str());
+    return readIniInt(pszKey, pszItem, iDefault, configPath().c_str());
 }
 void WriteConfig(const char *pszKey, const char *pszItem, const std::string& value)
 {
   // avoid writing unless the value is actually different, because writing causes
   // an annoying popup when having the file open in e.g. notepad++
-  if (LoadConfigStringFromFile(pszKey, pszItem, "_NULL") != value)
-    WritePrivateProfileStringA(pszKey, pszItem, value.c_str(), configPath().c_str());
+//  if (LoadConfigStringFromFile(pszKey, pszItem, "_NULL") != value)
+//    WritePrivateProfileStringA(pszKey, pszItem, value.c_str(), configPath().c_str());
+// fixme
 }
 void WriteConfig(const char *pszKey, const char *pszItem, int value)
 {
@@ -103,21 +148,21 @@ void InitPrimaryConfig()
   serverEnabled = LoadConfigStringUCase("config", "shared_memory", "ON") == "ON";
 
   // Get process count
-  gdwProcNum = getProcessCount("StarCraft.exe");
+  //gdwProcNum = getProcessCount("StarCraft.exe");
 
   // ------------------------- WMODE CONFIG OPTIONS ----------------------------------
   // Load windowed mode position and fullscreen setting
-  windowRect.left   = LoadConfigInt("window", "left");
-  windowRect.top    = LoadConfigInt("window", "top");
-  windowRect.right  = LoadConfigInt("window", "width");
-  windowRect.bottom = LoadConfigInt("window", "height");
-  switchToWMode     = LoadConfigStringUCase("window", "windowed", "OFF") == "ON";
+//  windowRect.left   = LoadConfigInt("window", "left");
+//  windowRect.top    = LoadConfigInt("window", "top");
+//  windowRect.right  = LoadConfigInt("window", "width");
+//  windowRect.bottom = LoadConfigInt("window", "height");
+//  switchToWMode     = LoadConfigStringUCase("window", "windowed", "OFF") == "ON";
 
-  // Limit minimum w-mode size
-  if ( windowRect.right < WMODE_MIN_WIDTH )
-    windowRect.right = WMODE_MIN_WIDTH;
-  if ( windowRect.bottom < WMODE_MIN_HEIGHT )
-    windowRect.bottom = WMODE_MIN_HEIGHT;
+//  // Limit minimum w-mode size
+//  if ( windowRect.right < WMODE_MIN_WIDTH )
+//    windowRect.right = WMODE_MIN_WIDTH;
+//  if ( windowRect.bottom < WMODE_MIN_HEIGHT )
+//    windowRect.bottom = WMODE_MIN_HEIGHT;
 
 }
 

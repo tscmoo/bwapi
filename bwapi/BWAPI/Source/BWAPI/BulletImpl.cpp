@@ -1,6 +1,5 @@
 #include "BulletImpl.h"
-#include <BW/CBullet.h>
-#include <BW/CSprite.h>
+#include <BW/BWData.h>
 #include <BW/Constants.h>
 #include <BWAPI/Client/BulletData.h>
 #include <Util/Convenience.h>
@@ -13,12 +12,11 @@
 
 namespace BWAPI
 {
-  int BulletImpl::nextId = 0;
+  //int BulletImpl::nextId = 0;
 
   //---------------------------------------------- CONSTRUCTOR -----------------------------------------------
-  BulletImpl::BulletImpl(BW::CBullet* originalBullet, u16 _index)
-      : bwOriginalBullet(originalBullet)
-      , index(_index)
+  BulletImpl::BulletImpl(BW::Bullet bwbullet)
+      : bwbullet(bwbullet)
   {
   }
   //----------------------------------------------- SET EXISTS -----------------------------------------------
@@ -30,40 +28,24 @@ namespace BWAPI
   void BulletImpl::saveExists()
   {
     if ( !lastExists && __exists)
-      id = nextId++;
+      id = BroodwarImpl.bulletNextId++;
     lastExists = __exists;
-  }
-  //---------------------------------------------- GET RAW DATA ----------------------------------------------
-  BW::CBullet* BulletImpl::getRawData() const
-  {
-    return this->bwOriginalBullet;
-  }
-  //---------------------------------------- BW BULLET TO BWAPI BULLET ---------------------------------------
-  BulletImpl* BulletImpl::BWBulletToBWAPIBullet(BW::CBullet* bullet)
-  {
-    if ( !bullet )
-      return nullptr;
-
-    int index = bullet - BW::BWDATA::BulletNodeTable.data();
-    if ( index > BW::BULLET_ARRAY_MAX_LENGTH )
-      return nullptr;
-    return BroodwarImpl.getBulletFromIndex(index);
   }
   void BulletImpl::updateData()
   {
-    bool _exists = __exists && bwOriginalBullet;
+    bool _exists = __exists && bwbullet;
     if ( _exists )
     {
       for(int i = 0; i < 9; ++i)
       {
         PlayerImpl* player = static_cast<PlayerImpl*>(Broodwar->getPlayer(i));
 
-        if ( !bwOriginalBullet->sprite || !player )
+        if ( !bwbullet.hasSprite() || !player )
           self->isVisible[i] = false;
         else if ( BWAPI::BroodwarImpl.isFlagEnabled(Flag::CompleteMapInformation) )
           self->isVisible[i] = true;
         else
-          self->isVisible[i] = Broodwar->isVisible( TilePosition(bwOriginalBullet->sprite->position) );
+          self->isVisible[i] = Broodwar->isVisible( TilePosition(bwbullet.spritePosition()) );
       }
     }
     else
@@ -76,35 +58,35 @@ namespace BWAPI
           BroodwarImpl.isReplay() || 
           isVisible()) )
     {
-      UnitImpl *_getSource = UnitImpl::BWUnitToBWAPIUnit(bwOriginalBullet->sourceUnit);
-      UnitImpl *_getTarget = UnitImpl::BWUnitToBWAPIUnit(bwOriginalBullet->attackTarget.pUnit);
+      UnitImpl *_getSource = BWAPI::BroodwarImpl.getUnitFromBWUnit(bwbullet.sourceUnit());
+      UnitImpl *_getTarget = BWAPI::BroodwarImpl.getUnitFromBWUnit(bwbullet.attackTargetUnit());
       Player   _getPlayer = _getSource ? _getSource->_getPlayer : nullptr;
 
       // id, player, type, source
       self->id      = id;
       self->player  = (_getSource && _getSource->isAlive && _getPlayer) ? _getPlayer->getID() : -1;
-      self->type    = bwOriginalBullet->type;
+      self->type    = bwbullet.type();
       self->source  = (_getSource && _getSource->exists()) ? _getSource->getID() : -1;
 
       // position
-      self->positionX = bwOriginalBullet->position.x;
-      self->positionY = bwOriginalBullet->position.y;
+      self->positionX = bwbullet.position().x;
+      self->positionY = bwbullet.position().y;
 
       // angle, velocity
-      int d = (int)bwOriginalBullet->currentDirection - 64;
+      int d = (int)bwbullet.currentDirection() - 64;
       if ( d < 0 )
         d += 256;
       self->angle     = (double)d * 3.14159265358979323846 / 128.0;
-      self->velocityX = (double)(bwOriginalBullet->current_speed.x / 256.0);
-      self->velocityY = (double)(bwOriginalBullet->current_speed.y / 256.0);
+      self->velocityX = (double)(bwbullet.current_speed_x() / 256.0);
+      self->velocityY = (double)(bwbullet.current_speed_y() / 256.0);
 
       // target, targetPosition
       self->target          = (_getTarget && _getTarget->exists()) ? _getTarget->getID() : -1;
-      self->targetPositionX = bwOriginalBullet->targetPosition.x;
-      self->targetPositionY = bwOriginalBullet->targetPosition.y;
+      self->targetPositionX = bwbullet.targetPosition().x;
+      self->targetPositionY = bwbullet.targetPosition().y;
 
       // removeTimer
-      self->removeTimer = bwOriginalBullet->time_remaining;
+      self->removeTimer = bwbullet.time_remaining();
 
       // exists
       self->exists  = true;

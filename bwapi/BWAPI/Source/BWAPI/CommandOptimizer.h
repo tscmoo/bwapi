@@ -4,6 +4,8 @@
 #include <BWAPI/UnitCommandType.h>
 #include <BWAPI/UnitCommand.h>
 
+#include "BW/BWData.h"
+
 namespace BWAPI
 {
   /// Used for optimizing several commands of the same type, usually by grouping units together.

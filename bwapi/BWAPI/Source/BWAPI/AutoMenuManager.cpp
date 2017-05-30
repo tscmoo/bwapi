@@ -1,20 +1,20 @@
 #include "AutoMenuManager.h"
 #include "../Config.h"
-#include "../DLLMain.h"
+//#include "../DLLMain.h"
 
 #include <algorithm>
 #include <sstream>
-#include <Util/Path.h>
+//#include <Util/Path.h>
 #include <Util/StringUtil.h>
 
-#include <BW/MenuPosition.h>
-#include <BW/Dialog.h>
+//#include <BW/MenuPosition.h>
+//#include <BW/Dialog.h>
 #include <BWAPI/GameImpl.h>
-#include <BW/Offsets.h>
+//#include <BW/Offsets.h>
 
 using namespace BWAPI;
 
-AutoMenuManager::AutoMenuManager()
+AutoMenuManager::AutoMenuManager(BW::Game bwgame) : bwgame(bwgame)
 {
   this->reloadConfig();
 }
@@ -40,10 +40,11 @@ void AutoMenuManager::reloadConfig()
 
   // Load map string
   std::string cfgMap = LoadConfigString("auto_menu", "map", "");
-  std::replace(cfgMap.begin(), cfgMap.end(), '/', '\\');
+  std::replace(cfgMap.begin(), cfgMap.end(), '\\', '/');
 
   // Used to check if map string was changed.
-  static std::string lastAutoMapString;
+  //static std::string lastAutoMapString;
+  std::string lastAutoMapString;
   bool mapChanged = false;
 
   // If the auto-menu map field was changed
@@ -60,8 +61,11 @@ void AutoMenuManager::reloadConfig()
     size_t tmp = cfgMap.find_last_of("\\/\n");
     if (tmp != std::string::npos)
       this->autoMenuMapPath = cfgMap.substr(0, tmp);
-    this->autoMenuMapPath += "\\";
+    if (autoMenuMapPath.empty()) this->autoMenuMapPath = "./";
+    else this->autoMenuMapPath += "/";
 
+//#ifdef _WIN32
+#if 0
     // Iterate files in directory
     WIN32_FIND_DATAA finder = { 0 };
     HANDLE hFind = FindFirstFileA(cfgMap.c_str(), &finder);
@@ -82,6 +86,11 @@ void AutoMenuManager::reloadConfig()
       } while (FindNextFileA(hFind, &finder));
       FindClose(hFind);
     } // handle exists
+#else
+    std::string filename = cfgMap;
+    if (tmp != std::string::npos) filename = filename.substr(tmp + 1);
+    this->autoMapPool = {filename};
+#endif
 
     mapChanged = true;
   } // if map was changed^
@@ -106,7 +115,7 @@ void AutoMenuManager::reloadConfig()
 
   std::string currentrace = this->autoMenuRace.substr(0, this->autoMenuRace.find_first_of(','));
 
-  for (int i = 0; i < (int)gdwProcNum && raceList; ++i)
+  for (int i = 0; i < (int)BWAPI::BroodwarImpl.getInstanceNumber() && raceList; ++i)
       std::getline(raceList, currentrace, ',');
 
   // trim whitespace outside quotations and then the quotations
@@ -157,32 +166,32 @@ void AutoMenuManager::chooseNewRandomMap()
   }
 }
 
-unsigned int getLobbyPlayerCount()
+unsigned int AutoMenuManager::getLobbyPlayerCount()
 {
   unsigned int rval = 0;
   for (unsigned int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
   {
-    if (BW::BWDATA::Players[i].nType == PlayerTypes::Player)
+    if (bwgame.getPlayer(i).nType() == PlayerTypes::Player)
       ++rval;
   }
   return rval;
 }
-unsigned int getLobbyPlayerReadyCount()
+unsigned int AutoMenuManager::getLobbyPlayerReadyCount()
 {
   unsigned int rval = 0;
   for (unsigned int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
   {
-    if (BW::BWDATA::Players[i].nType == PlayerTypes::Player && BW::BWDATA::PlayerDownloadStatus[i] >= 100)
+    if (bwgame.getPlayer(i).nType() == PlayerTypes::Player && bwgame.getPlayer(i).downloadStatus() >= 100)
       ++rval;
   }
   return rval;
 }
-unsigned int getLobbyOpenCount()
+unsigned int AutoMenuManager::getLobbyOpenCount()
 {
   unsigned int rval = 0;
   for (unsigned int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
   {
-    if (BW::BWDATA::Players[i].nType == PlayerTypes::EitherPreferHuman)
+    if (bwgame.getPlayer(i).nType() == PlayerTypes::EitherPreferHuman)
       ++rval;
   }
   return rval;
@@ -190,10 +199,6 @@ unsigned int getLobbyOpenCount()
 
 void AutoMenuManager::onMenuFrame()
 {
-  static DWORD createdTimer;
-  static DWORD waitJoinTimer;
-  static DWORD waitSelRaceTimer;
-  static DWORD waitRestartTimer;
 
   // Don't attempt auto-menu if we run into 50 error message boxes
   if (this->autoMapTryCount > 50)
@@ -209,296 +214,94 @@ void AutoMenuManager::onMenuFrame()
     return;
 #endif
 
-  // Get the menu mode
-  int menu = BW::BWDATA::glGluesMode;
+}
 
-  // Declare a commonly used dialog pointer
-  BW::dialog *tempDlg = nullptr;
-
-  // Get some autoMenu properties
+void AutoMenuManager::startGame()
+{
   bool isAutoSingle = this->autoMenuMode == "SINGLE_PLAYER";
-  bool isCreating = !this->autoMenuMapPath.empty();
-  bool isJoining = !this->autoMenuGameName.empty();
-
-  // Reset raceSel flag
-  if (menu != BW::GLUE_CHAT)
-  {
-    this->actRaceSel = false;
-    this->actStartedGame = false;
-  }
-
-  // Iterate through the menus
-  switch (menu)
-  {
-  case BW::GLUE_MAIN_MENU:    // Main menu
-    if (BW::FindDialogGlobal("TitleDlg")) // skip if at title
-      break;
-
-    // Choose single or multi
-    pressDialogKey(BW::FindDialogGlobal("MainMenu")->findIndex(isAutoSingle ? 3 : 4));
-
-    // choose original or expansion (we always choose expansion)
-    if (BW::FindDialogGlobal("Delete"))
-      pressDialogKey(BW::FindDialogGlobal("Delete")->findIndex(7));
-    break;
-  case BW::GLUE_EX_CAMPAIGN:  // Campaign selection menu
-  case BW::GLUE_CAMPAIGN:
-    // Choose "Custom"
-    pressDialogKey(BW::FindDialogGlobal("RaceSelection")->findIndex(10));
-    break;
-  case BW::GLUE_CREATE:       // Game creation menu
-  case BW::GLUE_CREATE_MULTI:
-    // Store the tick count while in this menu, and refer to it in the next
-    createdTimer = GetTickCount();
-    tempDlg = BW::FindDialogGlobal("Create");
-
-    if (!this->lastMapGen.empty())
-    {
-      if (getFileType(this->lastMapGen) == 1)
+  //bool isCreating = !this->autoMenuMapPath.empty();
+  //bool isJoining = !this->autoMenuGameName.empty();
+  
+  std::string name = this->autoMenuCharacterName;
+  if (name == "FIRST")
+    name = "bwapi"; // this name will be used if there are no existing characters
+  else if (name.empty())
+    name = "empty";
+  
+  Broodwar->setCharacterName(name);
+  
+  //if (!Broodwar->setMap(this->lastMapGen)) throw std::runtime_error("AutoMenuManager::createGame: setMap failed :(");
+  BWAPI::BroodwarImpl.bwgame.setMapFileName(this->lastMapGen);
+  Broodwar->setGameType(GameType::getType(this->autoMenuGameType));
+  
+  if (isAutoSingle) {
+    Broodwar->createSinglePlayerGame([&]() {
+      auto race = GameImpl::getMenuRace(this->autoMenuRace);
+      if (Broodwar->self()) 
       {
-        // convert to game type
-        GameType gt = GameType::getType(this->autoMenuGameType);
-
-        // retrieve gametype dropdown
-        BW::dialog *gameTypeDropdown = tempDlg->findIndex(17);
-        if (!gameTypeDropdown)
-          break;
-
-        if (gt != GameTypes::None && gt != GameTypes::Unknown && (int)gameTypeDropdown->getSelectedValue() != gt)
+        if (Broodwar->self()->getRace() != race)
+          Broodwar->self()->setRace(race);
+        unsigned enemyCount = 0;
+        for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
         {
-          gameTypeDropdown->setSelectedByValue(gt);
-          break;
+          Player p = Broodwar->getPlayer(i);
+          if (p->getType() != PlayerTypes::EitherPreferHuman && p->getType() != PlayerTypes::EitherPreferComputer) continue;
+          if (p == Broodwar->self()) continue;
+          if (enemyCount < this->autoMenuEnemyCount)
+            p->setRace(GameImpl::getMenuRace(this->autoMenuEnemyRace[enemyCount++]));
+          else
+            p->closeSlot();
         }
-
-        // game types with an extra settings dropdown
-        if (gt == GameTypes::Top_vs_Bottom ||
-            gt == GameTypes::Greed ||
-            gt == GameTypes::Slaughter ||
-            gt == GameTypes::Team_Melee ||
-            gt == GameTypes::Team_Free_For_All ||
-            gt == GameTypes::Team_Capture_The_Flag)
-        {
-          BW::dialog* extraDropdown = tempDlg->findIndex(18);
-          if (!extraDropdown || std::string(extraDropdown->getSelectedString()).empty())
-            break;
-          
-          if (!this->autoMenuGameTypeExtra.empty() &&
-            extraDropdown->getSelectedString() != this->autoMenuGameTypeExtra)
-          {
-            extraDropdown->setSelectedByString(this->autoMenuGameTypeExtra);
-            break;
-          }
-        }
-
-        // if this is single player
-        if (isAutoSingle)
-        {
-          // Set player race
-          GameImpl::_changeRace(0, GameImpl::getMenuRace(this->autoMenuRace));
-
-          // Set enemy races
-          for (unsigned int i = 1; i <= this->autoMenuEnemyCount; ++i)
-            GameImpl::_changeRace(i, GameImpl::getMenuRace(this->autoMenuEnemyRace[i]));
-
-          //close remaining slots
-          for (int i = this->autoMenuEnemyCount; i < 7; ++i)
-          {
-            BW::dialog *slot = tempDlg->findIndex((short)(21 + i));
-            if (slot->getSelectedIndex() != 0)
-              slot->setSelectedIndex(0);
-          }
-        } // if single
-      } // if map is playable
-
-      // if we encounter an unknown error when attempting to load the map
-      if (BW::FindDialogGlobal("gluPOk"))
-      {
-        this->chooseNewRandomMap();
-        ++this->autoMapTryCount;
-        pressDialogKey(BW::FindDialogGlobal("gluPOk")->findIndex(1));
+        Broodwar->startGame();
       }
-
-      pressDialogKey(tempDlg->findIndex(12));
-    } // if lastmapgen
-    break;
-  case BW::GLUE_CONNECT:
-    tempDlg = BW::FindDialogGlobal("ConnSel");
-
-    // Press hotkey if trying to get to BNET
-    // or press it after the LAN mode has been selected
-    if (this->autoMenuMode == "BATTLE_NET" ||
-      (tempDlg->findIndex(5)->isVisible() &&
-      tempDlg->findIndex(5)->setSelectedByString(this->autoMenuLanMode)))
-      pressDialogKey(tempDlg->findIndex(9));
-
-    waitJoinTimer = 0;
-    break;
-  case BW::GLUE_GAME_SELECT:  // Games listing
-  {
-    if (waitJoinTimer == 0)
-      waitJoinTimer = GetTickCount();
-
-    tempDlg = BW::FindDialogGlobal("GameSel");
-    if (!tempDlg)
-      break;
-
-    bool gameToJoinExists = tempDlg->findIndex(5)->setSelectedByString(this->autoMenuGameName) ||
-      (this->autoMenuGameName == "JOIN_FIRST" && tempDlg->findIndex(5)->getListCount() > 0);
-
-    if (isJoining && !gameToJoinExists &&
-      waitJoinTimer + (3000 * (BroodwarImpl.getInstanceNumber() + 1)) > GetTickCount())
-      break; //wait for game to be hosted
-
-    waitJoinTimer = GetTickCount();
-
-    if (gameToJoinExists)
-    {
-      this->lastMapGen.clear();
-      pressDialogKey(tempDlg->findIndex(13));  // OK
-    }
-    else if (isCreating)
-    {
-      pressDialogKey(tempDlg->findIndex(15));  // Create Game
-    }
-  }
-  break;
-  case BW::GLUE_CHAT:
-    waitJoinTimer = 0;
-
-    if (!actRaceSel &&
-      BW::FindDialogGlobal("Chat") &&
-      GameImpl::_currentPlayerId() >= 0 &&
-      GameImpl::_currentPlayerId() < 8 &&
-      waitSelRaceTimer + 300 < GetTickCount())
-    {
-      waitSelRaceTimer = GetTickCount();
-
-      // Determine the current player's race
-      Race playerRace = GameImpl::getMenuRace(this->autoMenuRace);
-      if (playerRace != Races::Unknown && playerRace != Races::None)
-      {
-        // Check if the race was selected correctly, and prevent further changing afterwords
-        u8 currentRace = BW::BWDATA::Players[GameImpl::_currentPlayerId()].nRace;
-
-        if ((currentRace == playerRace ||
-          (this->autoMenuRace == "RANDOMTP" &&
-          (currentRace == Races::Terran ||
-          currentRace == Races::Protoss)) ||
-          (this->autoMenuRace == "RANDOMTZ" &&
-          (currentRace == Races::Terran ||
-          currentRace == Races::Zerg)) ||
-          (this->autoMenuRace == "RANDOMPZ" &&
-          (currentRace == Races::Protoss ||
-          currentRace == Races::Zerg))
-          ))
-        {
-          actRaceSel = true;
-        }
-
-        // Set the race
-        if (!actRaceSel)
-          GameImpl::_changeRace(8, playerRace);
-      }// if player race is valid
-    } // if dialog "chat" exists
-
-
-    if (BW::FindDialogGlobal("gluPOk"))
-    {
-      pressDialogKey(BW::FindDialogGlobal("gluPOk")->findIndex(1));
-      actStartedGame = false;
-      waitRestartTimer = GetTickCount();
-    }
-
-    // Start the game if creating and auto-menu requirements are met
-    if (isCreating &&
-      waitRestartTimer + 2000 < GetTickCount() &&
-      !actStartedGame &&
-      getLobbyPlayerReadyCount() > 0 &&
-      getLobbyPlayerReadyCount() == getLobbyPlayerCount() &&
-      (getLobbyPlayerReadyCount() >= this->autoMenuMinPlayerCount || getLobbyOpenCount() == 0))
-    {
-      if (getLobbyPlayerReadyCount() >= this->autoMenuMaxPlayerCount || getLobbyOpenCount() == 0 || GetTickCount() > createdTimer + this->autoMenuWaitPlayerTime)
-      {
-        if (!BW::FindDialogGlobal("Chat")->findIndex(7)->isDisabled())
-        {
-          actStartedGame = true;
-          BW::FindDialogGlobal("Chat")->findIndex(7)->activate();
-        }
-      } // if lobbyPlayerCount etc
-    } // if isCreating etc
-    break;
-  case BW::GLUE_LOGIN:  // Registry/Character screen
-  {
-    if (this->autoMenuCharacterName == "WAIT")
-      break;
-
-    std::string name = this->autoMenuCharacterName;
-    if (name == "FIRST")
-      name = "bwapi"; // this name will be used if there are no existing characters
-    else if (name.empty())
-      name = "empty";
-
-    BW::dialog* newIdPopup = BW::FindDialogGlobal("gluPEdit");
-    if (newIdPopup)
-    {
-      newIdPopup->findIndex(4)->setText(&name[0]); //it'll copy the string
-      BroodwarImpl.pressKey(VK_RETURN); // popup Ok
-      BroodwarImpl.pressKey(VK_RETURN); // main Ok
-    }
-    else if (this->autoMenuCharacterName != "FIRST")
-    {
-      //if we're here, there are some existing characters
-      BW::dialog* characterList = BW::FindDialogGlobal("Login")->findIndex(8);
-
-      if (characterList->getListCount() == 0)
-        break; //wait for list to exist/be populated
-      if (characterList->setSelectedByString(this->autoMenuCharacterName))
-        BroodwarImpl.pressKey(VK_RETURN); // main Ok
       else
-        pressDialogKey(BW::FindDialogGlobal("Login")->findIndex(6)); // New ID
-    }
-    else
-      BroodwarImpl.pressKey(VK_RETURN); // main Ok
-    break;
+      {
+        bool foundSlot = false;
+        for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
+        {
+          Player p = Broodwar->getPlayer(i);
+          if (p->getType() == PlayerTypes::EitherPreferHuman)
+          {
+            Broodwar->switchToPlayer(p);
+            foundSlot = true;
+            break;
+          }
+        }
+        if (!foundSlot) throw std::runtime_error("createSinglePlayerGame: no available slot");
+      }
+    });
+
+  } else {
+    
+    Broodwar->createMultiPlayerGame([&]() {
+      auto race = GameImpl::getMenuRace(this->autoMenuRace);
+      if (Broodwar->self()) 
+      {
+        if (Broodwar->self()->getRace() != race)
+          Broodwar->self()->setRace(race);
+      }
+      else {
+        for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
+        {
+          Player p = Broodwar->getPlayer(i);
+          if (p->getType() == PlayerTypes::EitherPreferHuman)
+          {
+            Broodwar->switchToPlayer(p);
+            break;
+          }
+        }
+      }
+      
+      int playerCount = 0;
+      for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
+      {
+        Player p = Broodwar->getPlayer(i);
+        if (p->getType() != PlayerTypes::Player && p->getType() != PlayerTypes::Computer) continue;
+        ++playerCount;
+      }
+      if (playerCount >= 2) Broodwar->startGame();
+    });
+
   }
-  case BW::GLUE_SCORE_Z_DEFEAT:
-  case BW::GLUE_SCORE_Z_VICTORY:
-  case BW::GLUE_SCORE_T_DEFEAT:
-  case BW::GLUE_SCORE_T_VICTORY:
-  case BW::GLUE_SCORE_P_DEFEAT:
-  case BW::GLUE_SCORE_P_VICTORY:
-    if (this->autoMenuRestartGame != "" && this->autoMenuRestartGame != "OFF")
-      pressDialogKey(BW::FindDialogGlobal("End")->findIndex(7));
-    break;
-  case BW::GLUE_READY_T:  // Mission Briefing
-  case BW::GLUE_READY_Z:
-  case BW::GLUE_READY_P:
-    pressDialogKey(BW::FindDialogGlobal(menu == BW::GLUE_READY_Z ? "ReadyZ" : "TerranRR")->findIndex(13));
-    break;
-  } // menu switch
-}
 
-void AutoMenuManager::pressDialogKey(BW::dialog *pDlg)
-{
-  if (pDlg)
-    BroodwarImpl.pressKey(pDlg->getHotkey());
-}
-
-const char* AutoMenuManager::interceptFindFirstFile(const char* lpFileName)
-{
-  if (!autoMenuMapPath.empty() &&
-    autoMenuMode != ""       &&
-    autoMenuMode != "OFF"    &&
-    !lastMapGen.empty() &&
-    strstr(lpFileName, "*.*"))
-  {
-    lpFileName = lastMapGen.c_str();
-
-    // Get the directory that the map is in
-    std::string directoryPath = Util::Path(installPath() + lastMapGen).parent_path().string();
-
-    // update map folder location
-    SStrCopy(BW::BWDATA::CurrentMapFolder.data(), directoryPath.c_str(), MAX_PATH);
-  }
-  return lpFileName;
 }

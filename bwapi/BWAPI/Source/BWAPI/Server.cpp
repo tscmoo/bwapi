@@ -5,7 +5,6 @@
 #include <Util/Convenience.h>
 #include <cassert>
 #include <sstream>
-#include <AclAPI.h>
 
 #include "GameImpl.h"
 #include "PlayerImpl.h"
@@ -15,8 +14,7 @@
 #include <BWAPI/Client/GameData.h>
 #include <BWAPI/Client/GameTable.h>
 
-#include <BW/Pathing.h>
-#include <BW/Offsets.h>
+#include <BW/BWData.h>
 
 #include "../Config.h"
 #include "../../../svnrev.h"
@@ -31,78 +29,9 @@ namespace BWAPI
   const BWAPI::GameInstance GameInstance_None(0, false, 0);
   Server::Server()
   {
-    // Local variables
-    const DWORD processID = GetCurrentProcessId();
 
     if ( serverEnabled )
     {
-      // Try to open the game table
-      gameTableFileHandle = CreateFileMappingA( INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(GameTable), "Local\\bwapi_shared_memory_game_list" );
-      DWORD dwFileMapErr = GetLastError();
-      if ( gameTableFileHandle )
-      {
-        gameTable = static_cast<GameTable*>(MapViewOfFile(gameTableFileHandle, FILE_MAP_WRITE | FILE_MAP_READ, 0, 0, sizeof(GameTable)));
-
-        if ( gameTable )
-        {
-          if ( dwFileMapErr != ERROR_ALREADY_EXISTS )
-          {
-            // If we created it, initialize it
-            for(int i = 0; i < GameTable::MAX_GAME_INSTANCES; ++i)
-              gameTable->gameInstances[i] = GameInstance_None;
-          } // If does not already exist
-
-          // Check to see if we are already in the table
-          for(int i = 0; i < GameTable::MAX_GAME_INSTANCES; ++i)
-          {
-            if (gameTable->gameInstances[i].serverProcessID == processID)
-            {
-              gameTableIndex = i;
-              break;
-            }
-          }
-          // If not, try to find an empty row
-          if (gameTableIndex == -1)
-          {
-            for(int i = 0; i < GameTable::MAX_GAME_INSTANCES; ++i)
-            {
-              if (gameTable->gameInstances[i].serverProcessID == 0)
-              {
-                gameTableIndex = i;
-                break;
-              }
-            }
-          }
-          // If we can't find an empty row, take over the row with the oldest keep alive time
-          if (gameTableIndex == -1)
-          {
-            DWORD oldest = gameTable->gameInstances[0].lastKeepAliveTime;
-            gameTableIndex = 0;
-            for(int i = 1; i < GameTable::MAX_GAME_INSTANCES; ++i)
-            {
-              if (gameTable->gameInstances[i].lastKeepAliveTime < oldest)
-              {
-                oldest = gameTable->gameInstances[i].lastKeepAliveTime;
-                gameTableIndex = i;
-              }
-            }
-          }
-          //We have a game table index now, initialize our row
-          gameTable->gameInstances[gameTableIndex].serverProcessID = processID;
-          gameTable->gameInstances[gameTableIndex].isConnected = false;
-          gameTable->gameInstances[gameTableIndex].lastKeepAliveTime = GetTickCount();
-        } // if gameTable
-      } // if gameTableFileHandle
-
-      // Create the share name
-      std::stringstream ssShareName;
-      ssShareName << "Local\\bwapi_shared_memory_";
-      ssShareName << processID;
-
-      // Create the file mapping and shared memory
-      mapFileHandle = CreateFileMappingA( INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(GameData), ssShareName.str().c_str() );
-      if ( mapFileHandle )
-        data = static_cast<GameData*>(MapViewOfFile(mapFileHandle, FILE_MAP_WRITE | FILE_MAP_READ, 0, 0, sizeof(GameData)));
     } // if serverEnabled
 
     // check if memory was created or if we should create it locally
@@ -115,112 +44,16 @@ namespace BWAPI
 
     if ( serverEnabled )
     {
-	    //--------------------------------------------------------------------------------------------------------
-	    // Security Structure hobbled together from this document:
-	    // http://msdn.microsoft.com/en-us/library/aa446595%28VS.85%29.aspx
-	    //
-
-	    this->pEveryoneSID = NULL;
-	    SID_IDENTIFIER_AUTHORITY SIDAuthWorld = SECURITY_WORLD_SID_AUTHORITY;
-	    
-      // Create a well-known SID for the Everyone group.
-      if( !AllocateAndInitializeSid( &SIDAuthWorld, 
-                                    1,
-                                    SECURITY_WORLD_RID,
-                                    0, 0, 0, 0, 0, 0, 0,
-                                    &this->pEveryoneSID) )
-      {
-        // AllocateAndInitializeSid failed
-        //Util::Logger::globalLog->log("Error: AllocateAndInitializeSid");
-		    //printf("AllocateAndInitializeSid Error %u\n", GetLastError());
-      }
-
-      // Initialize an EXPLICIT_ACCESS structure for an ACE.
-      // The ACE will allow Everyone access.
-      EXPLICIT_ACCESS ea = {};
-      ea.grfAccessPermissions  = GENERIC_ALL;
-	    ea.grfAccessMode         = GRANT_ACCESS;
-      ea.grfInheritance        = NO_INHERITANCE;
-      ea.Trustee.TrusteeForm   = TRUSTEE_IS_SID;
-      ea.Trustee.TrusteeType   = TRUSTEE_IS_WELL_KNOWN_GROUP;
-      ea.Trustee.ptstrName     = (LPTSTR)this->pEveryoneSID;
-
-	    this->pACL = NULL;  //a NULL DACL is assigned to the security descriptor, which allows all access to the object
-
-      // Create a new ACL that contains the new ACEs.
-      DWORD dwRes = SetEntriesInAcl(1, &ea, NULL, &this->pACL);
-      if (ERROR_SUCCESS != dwRes) 
-      {
-        // SetEntriesInAcl failed
-        //Util::Logger::globalLog->log("Error: SetEntriesInAcl");
-		    //printf("SetEntriesInAcl Error %u\n", GetLastError());
-      }
-
-      // Initialize a security descriptor.  
-      this->pSD = (PSECURITY_DESCRIPTOR) LocalAlloc(LPTR, SECURITY_DESCRIPTOR_MIN_LENGTH); 
-      if ( NULL == this->pSD ) 
-      { 
-        // LocalAlloc failed
-        //Util::Logger::globalLog->log("Error: LocalAlloc");
-		    //printf("LocalAlloc Error %u\n", GetLastError()); 
-      } 
- 
-      if ( !InitializeSecurityDescriptor(this->pSD, SECURITY_DESCRIPTOR_REVISION) ) 
-      {
-        // InitializeSecurityDescriptor failed
-        //Util::Logger::globalLog->log("Error: InitializeSecurityDescriptor");
-		    //printf("InitializeSecurityDescriptor Error %u\n",GetLastError()); 
-      } 
-
-	    // Add the ACL to the security descriptor. 
-      if ( !SetSecurityDescriptorDacl(this->pSD, 
-									                    TRUE,     // bDaclPresent flag   
-									                    this->pACL, 
-									                    FALSE) )   // not a default DACL 
-      {
-        // SetSecurityDescriptorDacl failed
-		    //Util::Logger::globalLog->log("Error: InitializeSecurityDescriptor");
-		    //printf("SetSecurityDescriptorDacl Error %u\n",GetLastError());
-      } 
-
-      // Initialize a security attributes structure.
-      SECURITY_ATTRIBUTES sa = { 0 };
-	    sa.nLength = sizeof(sa);
-      sa.lpSecurityDescriptor = this->pSD;
-      sa.bInheritHandle = FALSE;
-	    //--------------------------------------------------------------------------------------------------------
-
-      std::stringstream communicationPipe;
-      communicationPipe << "\\\\.\\pipe\\bwapi_pipe_";
-      communicationPipe << processID;
-      
-      pipeObjectHandle = CreateNamedPipeA(communicationPipe.str().c_str(),
-                                         PIPE_ACCESS_DUPLEX,
-                                         PIPE_TYPE_MESSAGE | PIPE_READMODE_MESSAGE | PIPE_NOWAIT,
-                                         PIPE_UNLIMITED_INSTANCES,
-                                         PIPE_SYSTEM_BUFFER_SIZE,
-                                         PIPE_SYSTEM_BUFFER_SIZE,
-                                         PIPE_TIMEOUT,
-                                         &sa);
     }
   }
   Server::~Server()
   {
-    if ( pipeObjectHandle && pipeObjectHandle != INVALID_HANDLE_VALUE )
-      DisconnectNamedPipe(pipeObjectHandle);
 
     if ( localOnly && data )
     {
       delete data;
       data = nullptr;
     }
-
-    if ( this->pEveryoneSID )
-      FreeSid(this->pEveryoneSID);
-    if ( this->pACL )
-      LocalFree(this->pACL);
-    if ( this->pSD )
-      LocalFree(this->pSD);
   }
   void Server::update()
   {
@@ -231,7 +64,7 @@ namespace BWAPI
     data->shapeCount       = 0;
     if (gameTable && gameTableIndex >= 0)
     {
-      gameTable->gameInstances[gameTableIndex].lastKeepAliveTime = GetTickCount();
+      gameTable->gameInstances[gameTableIndex].lastKeepAliveTime = 0;
       gameTable->gameInstances[gameTableIndex].isConnected = connected;
     }
     if (connected)
@@ -310,29 +143,14 @@ namespace BWAPI
 
   void Server::setWaitForResponse(bool wait)
   {
-    if ( !pipeObjectHandle || pipeObjectHandle == INVALID_HANDLE_VALUE )
-      return;
-
-    DWORD dwMode = PIPE_READMODE_MESSAGE | (wait ? PIPE_WAIT : PIPE_NOWAIT);
-    SetNamedPipeHandleState(pipeObjectHandle, &dwMode, NULL, NULL);
   }
   void Server::checkForConnections()
   {
-    if (connected || localOnly || !pipeObjectHandle || pipeObjectHandle == INVALID_HANDLE_VALUE )
-      return;
-    BOOL success = ConnectNamedPipe(pipeObjectHandle, nullptr);
-    if (!success && GetLastError() != ERROR_PIPE_CONNECTED)
-      return;
-    if (GetLastError() == ERROR_PIPE_CONNECTED)
-      connected = true;
-    if (!connected)
-      return;
-    setWaitForResponse(true);
   }
   void Server::initializeSharedMemory()
   {
     //called once when Starcraft starts. Not at the start of every match.
-    data->instanceID       = gdwProcNum;
+    data->instanceID       = BWAPI::BroodwarImpl.getInstanceNumber();
     data->revision         = SVN_REV;
     data->client_version   = CLIENT_VERSION;
     data->isDebug          = (BUILD_DEBUG == 1);
@@ -376,33 +194,34 @@ namespace BWAPI
       {
         data->isBuildable[x][y] = Broodwar->isBuildable(x, y);
         data->getGroundHeight[x][y] = Broodwar->getGroundHeight(x, y);
-        if (BW::BWDATA::SAIPathing )
-          data->mapTileRegionId[x][y] = BW::BWDATA::SAIPathing->mapTileRegionId[y][x];
-        else
-          data->mapTileRegionId[x][y] = 0;
+        //if (BW::BWDATA::SAIPathing )
+        //  data->mapTileRegionId[x][y] = BW::BWDATA::SAIPathing->mapTileRegionId[y][x];
+        //else
+        //  data->mapTileRegionId[x][y] = 0;
+        data->mapTileRegionId[x][y] = 0;
       }
 
     // Load pathing info
-    if ( BW::BWDATA::SAIPathing )
-    {
-      data->regionCount = BW::BWDATA::SAIPathing->regionCount;
-      for(int i = 0; i < 5000; ++i)
-      {
-        data->mapSplitTilesMiniTileMask[i] = BW::BWDATA::SAIPathing->splitTiles[i].minitileMask;
-        data->mapSplitTilesRegion1[i] = BW::BWDATA::SAIPathing->splitTiles[i].rgn1;
-        data->mapSplitTilesRegion2[i] = BW::BWDATA::SAIPathing->splitTiles[i].rgn2;
+//    if ( BW::BWDATA::SAIPathing )
+//    {
+//      data->regionCount = BW::BWDATA::SAIPathing->regionCount;
+//      for(int i = 0; i < 5000; ++i)
+//      {
+//        data->mapSplitTilesMiniTileMask[i] = BW::BWDATA::SAIPathing->splitTiles[i].minitileMask;
+//        data->mapSplitTilesRegion1[i] = BW::BWDATA::SAIPathing->splitTiles[i].rgn1;
+//        data->mapSplitTilesRegion2[i] = BW::BWDATA::SAIPathing->splitTiles[i].rgn2;
 
-        BWAPI::Region r = Broodwar->getRegion(i);
-        if (r)
-        {
-          data->regions[i] = *static_cast<RegionImpl*>(r)->getData();
-        }
-        else
-        {
-          MemZero(data->regions[i]);
-        }
-      }
-    }
+//        BWAPI::Region r = Broodwar->getRegion(i);
+//        if (r)
+//        {
+//          data->regions[i] = *static_cast<RegionImpl*>(r)->getData();
+//        }
+//        else
+//        {
+//          MemZero(data->regions[i]);
+//        }
+//      }
+//    }
 
     // Store the map size
     data->mapWidth  = mapSize.x;
@@ -533,7 +352,7 @@ namespace BWAPI
         data->selectedUnits[idx++] = getUnitID(t);
 
       //dynamic map data
-      Map::copyToSharedMemory();
+      BroodwarImpl.map.copyToSharedMemory();
       //(no dynamic force data)
 
       //dynamic player data
@@ -605,36 +424,36 @@ namespace BWAPI
       }
 
       unitFinder* xf = data->xUnitSearch;
-      unitFinder* yf = data->yUnitSearch;
-      const BW::unitFinder* bwxf = BW::BWDATA::UnitOrderingX.data();
-      const BW::unitFinder* bwyf = BW::BWDATA::UnitOrderingY.data();
-      int bwSearchSize = BW::BWDATA::UnitOrderingCount;
+//      unitFinder* yf = data->yUnitSearch;
+//      const BW::unitFinder* bwxf = BW::BWDATA::UnitOrderingX.data();
+//      const BW::unitFinder* bwyf = BW::BWDATA::UnitOrderingY.data();
+//      int bwSearchSize = BW::BWDATA::UnitOrderingCount;
 
-      for ( int i = 0; i < bwSearchSize; ++i, bwxf++, bwyf++ )
-      {
-        if (bwxf->unitIndex > 0 && bwxf->unitIndex <= BW::UNIT_ARRAY_MAX_LENGTH)
-        {
-          UnitImpl* u = BroodwarImpl.unitArray[bwxf->unitIndex-1];
-          if ( u && u->canAccess() )
-          {
-            xf->searchValue = bwxf->searchValue;
-            xf->unitIndex = getUnitID(u);
-            xf++;
-          }
-        } // x index
+//      for ( int i = 0; i < bwSearchSize; ++i, bwxf++, bwyf++ )
+//      {
+//        if (bwxf->unitIndex > 0 && bwxf->unitIndex <= BW::UNIT_ARRAY_MAX_LENGTH)
+//        {
+//          UnitImpl* u = BroodwarImpl.unitArray[bwxf->unitIndex-1];
+//          if ( u && u->canAccess() )
+//          {
+//            xf->searchValue = bwxf->searchValue;
+//            xf->unitIndex = getUnitID(u);
+//            xf++;
+//          }
+//        } // x index
 
-        if (bwyf->unitIndex > 0 && bwyf->unitIndex <= BW::UNIT_ARRAY_MAX_LENGTH)
-        {
-          UnitImpl* u = BroodwarImpl.unitArray[bwyf->unitIndex-1];
-          if ( u && u->canAccess() )
-          {
-            yf->searchValue = bwyf->searchValue;
-            yf->unitIndex = getUnitID(u);
-            yf++;
-          }
-        } // x index
+//        if (bwyf->unitIndex > 0 && bwyf->unitIndex <= BW::UNIT_ARRAY_MAX_LENGTH)
+//        {
+//          UnitImpl* u = BroodwarImpl.unitArray[bwyf->unitIndex-1];
+//          if ( u && u->canAccess() )
+//          {
+//            yf->searchValue = bwyf->searchValue;
+//            yf->unitIndex = getUnitID(u);
+//            yf++;
+//          }
+//        } // x index
 
-      } // loop unit finder
+//      } // loop unit finder
       
       // Set size
       data->unitSearchSize = xf - data->xUnitSearch; // we assume an equal number of y values was put into the array
@@ -733,21 +552,6 @@ namespace BWAPI
 
   void Server::callOnFrame()
   { 
-    DWORD writtenByteCount;
-    int code = 2;
-    WriteFile(pipeObjectHandle, &code, sizeof(int), &writtenByteCount, NULL);
-    while (code != 1)
-    {
-      DWORD receivedByteCount;
-      BOOL success = ReadFile(pipeObjectHandle, &code, sizeof(int), &receivedByteCount,NULL);
-      if (!success)
-      {
-        DisconnectNamedPipe(pipeObjectHandle);
-        connected = false;
-        setWaitForResponse(false);
-        break;
-      }
-    }
   }
   void Server::processCommands()
   {

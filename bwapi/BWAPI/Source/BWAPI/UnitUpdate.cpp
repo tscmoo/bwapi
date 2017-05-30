@@ -12,13 +12,12 @@
 #include <BWAPI/PlayerImpl.h>
 #include <BWAPI/WeaponType.h>
 
-#include <BW/CUnit.h>
-#include <BW/CSprite.h>
-#include <BW/CImage.h>
+#include <BW/BWData.h>
+#include <BW/Anims.h>
 #include <BW/UnitTarget.h>
 #include <BW/UnitStatusFlags.h>
 #include <BW/MovementFlags.h>
-#include <BW/Path.h>
+#include <BW/UnitMovementState.h>
 #include "Server.h"
 #include "BWtoBWAPI.h"
 
@@ -47,14 +46,14 @@ namespace BWAPI
 
   void UnitImpl::updateInternalData()
   {
-    BW::CUnit *o = getOriginalRawData;
+    BW::Unit o = bwunit;
     if ( !o )
       return;
     int selfPlayerID = BroodwarImpl.server.getPlayerID(Broodwar->self());
     self->replayID   = BWAPI::BroodwarImpl.isFlagEnabled(Flag::CompleteMapInformation) ? BW::UnitTarget(o).getTarget() : 0;
     if (isAlive)
     {
-      _getPlayer = BroodwarImpl._getPlayer(getOriginalRawData->playerID); //_getPlayer
+      _getPlayer = BroodwarImpl._getPlayer(o.playerID()); //_getPlayer
       //------------------------------------------------------------------------------------------------------
       //isVisible
       for ( int i = 0; i < 9; ++i )
@@ -62,20 +61,20 @@ namespace BWAPI
         if ( i == selfPlayerID )
           continue;
         PlayerImpl* player = static_cast<PlayerImpl*>(Broodwar->getPlayer(i));
-        if ( !o->sprite || !player )
+        if ( !o.hasSprite() || !player )
           self->isVisible[i] = false;
         else if (!BroodwarImpl.isReplay() && !BWAPI::BroodwarImpl.isFlagEnabled(Flag::CompleteMapInformation))
           self->isVisible[i] = false;
         else if ( _getPlayer == player )
           self->isVisible[i] = true;
         else if ( player->isNeutral() )
-          self->isVisible[i] = o->sprite->visibilityFlags > 0;
+          self->isVisible[i] = o.visibilityFlags() > 0;
         else
-          self->isVisible[i] = (o->sprite->visibilityFlags & (1 << player->getIndex())) != 0;
+          self->isVisible[i] = (o.visibilityFlags() & (1 << player->getIndex())) != 0;
       }
       if (selfPlayerID >= 0)
       {
-        if ( !o->sprite )
+        if ( !o.hasSprite() )
         {
           self->isVisible[selfPlayerID] = false;
           self->isDetected              = false;
@@ -85,27 +84,27 @@ namespace BWAPI
           self->isVisible[selfPlayerID] = true;
           self->isDetected              = true;
         }
-        else if (o->unitType == UnitTypes::Spell_Scanner_Sweep)
+        else if (o.unitType() == UnitTypes::Spell_Scanner_Sweep)
         {
-          self->isVisible[selfPlayerID] = isScannerVisible(o->position);
+          self->isVisible[selfPlayerID] = isScannerVisible(o.position());
           self->isDetected = true;
         }
         else
         {
-          self->isVisible[selfPlayerID] = (o->sprite->visibilityFlags & (1 << BroodwarImpl.BWAPIPlayer->getIndex())) != 0;
-          if (o->statusFlag(BW::StatusFlags::RequiresDetection))
+          self->isVisible[selfPlayerID] = (o.visibilityFlags() & (1 << BroodwarImpl.BWAPIPlayer->getIndex())) != 0;
+          if (o.statusFlag(BW::StatusFlags::RequiresDetection))
           {
-            self->isVisible[selfPlayerID] &= ((o->visibilityStatus == -1) ||
-                                             ((o->visibilityStatus & (1 << BroodwarImpl.BWAPIPlayer->getIndex())) != 0) ||
-                                               o->movementFlag(BW::MovementFlags::Moving | BW::MovementFlags::Accelerating) ||
-                                               o->orderID == Orders::Move ||
-                                               o->groundWeaponCooldown > 0 ||
-                                               o->airWeaponCooldown > 0 ||
-                                              !o->statusFlag(BW::StatusFlags::Burrowed) );
+            self->isVisible[selfPlayerID] &= ((o.visibilityStatus() == 0xffffffff) ||
+                                             ((o.visibilityStatus() & (1 << BroodwarImpl.BWAPIPlayer->getIndex())) != 0) ||
+                                               o.movementFlag(BW::MovementFlags::Moving | BW::MovementFlags::Accelerating) ||
+                                               o.orderID() == Orders::Move ||
+                                               o.groundWeaponCooldown() > 0 ||
+                                               o.airWeaponCooldown() > 0 ||
+                                              !o.statusFlag(BW::StatusFlags::Burrowed) );
           }
-          bool canDetect = !o->statusFlag(BW::StatusFlags::RequiresDetection) ||
-                           o->visibilityStatus == -1 ||
-                           ((o->visibilityStatus & (1 << BroodwarImpl.BWAPIPlayer->getIndex())) != 0);
+          bool canDetect = !o.statusFlag(BW::StatusFlags::RequiresDetection) ||
+                           o.visibilityStatus() == 0xffffffff ||
+                           ((o.visibilityStatus() & (1 << BroodwarImpl.BWAPIPlayer->getIndex())) != 0);
           self->isDetected = self->isVisible[selfPlayerID] & canDetect;
         }
       }
@@ -123,20 +122,20 @@ namespace BWAPI
       }
       //------------------------------------------------------------------------------------------------------
       //_getType
-      _getType = UnitType(o->unitType);
+      _getType = UnitType(o.unitType());
       if ( _getType.isMineralField() )
         _getType = UnitTypes::Resource_Mineral_Field;
 
-      getBuildQueueSlot = o->buildQueueSlot; //getBuildQueueSlot
+      getBuildQueueSlot = (u8)o.buildQueueSlot(); //getBuildQueueSlot
       for ( unsigned int i = 0; i < 5; ++i )
-        getBuildQueue[i] = BWAPI::UnitType(o->buildQueue[i]);  //getBuildQueue
+        getBuildQueue[i] = BWAPI::UnitType(o.buildQueue(i));  //getBuildQueue
 
       if (_getType.isBuilding())
       {
-        if (o->orderID == Orders::ZergBirth          ||
-            o->orderID == Orders::ZergBuildingMorph  ||
-            o->orderID == Orders::ZergUnitMorph      ||
-            o->orderID == Orders::Enum::IncompleteMorphing )
+        if (o.orderID() == Orders::ZergBirth          ||
+            o.orderID() == Orders::ZergBuildingMorph  ||
+            o.orderID() == Orders::ZergUnitMorph      ||
+            o.orderID() == Orders::Enum::IncompleteMorphing )
         {
           //if we have a morphing building, set unit type to the build type (what it is morphing to)
           if ( getBuildQueue[(getBuildQueueSlot % 5)] != UnitTypes::None )
@@ -151,26 +150,26 @@ namespace BWAPI
           _getType == UnitTypes::Protoss_Scarab       ||
           _getType == UnitTypes::Terran_Vulture_Spider_Mine)
       {
-        if (o->fighter.inHanger == false ||
-            o->statusFlag(BW::StatusFlags::InTransport | BW::StatusFlags::InBuilding) )
-          _getTransport = UnitImpl::BWUnitToBWAPIUnit(o->fighter.parent);
+        if (o.fighter_inHanger() == false ||
+            o.statusFlag(BW::StatusFlags::InTransport | BW::StatusFlags::InBuilding) )
+          _getTransport = BroodwarImpl.getUnitFromBWUnit(o.fighter_parent());
       }
-      else if (o->statusFlag(BW::StatusFlags::InTransport | BW::StatusFlags::InBuilding) )
-        _getTransport = UnitImpl::BWUnitToBWAPIUnit(o->connectedUnit);
+      else if (o.statusFlag(BW::StatusFlags::InTransport | BW::StatusFlags::InBuilding) )
+        _getTransport = BroodwarImpl.getUnitFromBWUnit(o.connectedUnit());
 
       //------------------------------------------------------------------------------------------------------
       //_getPosition
-      _getPosition = BWAPI::Position(_getTransport ? static_cast<UnitImpl*>(_getTransport)->getOriginalRawData->position : o->position);
+      _getPosition = BWAPI::Position(_getTransport ? static_cast<UnitImpl*>(_getTransport)->bwunit.position() : o.position());
 
-      _getHitPoints = (int)std::ceil(o->hitPoints / 256.0); //_getHitPoints
+      _getHitPoints = (int)std::ceil(o.hitPoints() / 256.0); //_getHitPoints
       //------------------------------------------------------------------------------------------------------
       //_getResources
       _getResources = 0;
       if ( _getType.isResourceContainer() )
-        _getResources = o->resource.resourceCount;
+        _getResources = o.resourceCount();
 
       hasEmptyBuildQueue = getBuildQueueSlot < 5 ? (getBuildQueue[getBuildQueueSlot] == UnitTypes::None) : false;  //hasEmptyBuildQueue
-      _isCompleted = o->statusFlag(BW::StatusFlags::Completed); //_isCompleted
+      _isCompleted = o.statusFlag(BW::StatusFlags::Completed); //_isCompleted
     }
     else // not alive
     {
@@ -192,10 +191,46 @@ namespace BWAPI
       _isCompleted        = false;              //_isCompleted
     }
   }
+  
+  BW::Unit UnitImpl::implGetDamageDealer() const
+  {
+    if (bwunit.subUnit()) return bwunit.subUnit();
+    return bwunit;
+  }
+  
+  int UnitImpl::implGetGroundWeaponCooldown() const 
+  {
+    const BWAPI::UnitType type(bwunit.unitType());
+    if (type == BWAPI::UnitTypes::Protoss_Reaver || type == BWAPI::UnitTypes::Hero_Warbringer)
+    {
+      return bwunit.mainOrderTimer();
+    }
+    return implGetDamageDealer().groundWeaponCooldown();
+  }
+  
+  int UnitImpl::implGetAirWeaponCooldown() const
+  {
+    return implGetDamageDealer().airWeaponCooldown();
+  }
+  
+  bool UnitImpl::implIsAttacking() const
+  {
+    BW::Anims::Enum animState = BW::Anims::Init;
+    BW::Unit damageDealer = implGetDamageDealer();
+    if (damageDealer.hasSprite() && damageDealer.hasSprite_pImagePrimary())
+    {
+      animState = (BW::Anims::Enum)damageDealer.sprite_pImagePrimary_anim();
+    }
+    return (animState == BW::Anims::GndAttkRpt ||  //isAttacking
+            animState == BW::Anims::AirAttkRpt ||
+            animState == BW::Anims::GndAttkInit ||
+            animState == BW::Anims::AirAttkInit) && bwunit.orderTarget_pUnit();
+  }
+  
   /// @todo TODO Refactor this entirely
   void UnitImpl::updateData()
   {
-    BW::CUnit *o = getOriginalRawData;
+    BW::Unit o = bwunit;
     self->isUnderDarkSwarm = false;
     self->isUnderDWeb      = false;
     if (canAccess())
@@ -204,25 +239,25 @@ namespace BWAPI
       self->positionY = _getPosition.y; //getPosition
       //------------------------------------------------------------------------------------------------------
       //getAngle
-      int d = o->currentDirection1;
+      int d = o.currentDirection1();
       d -= 64;
       if (d < 0)
         d += 256;
 
       self->angle     = (double)d * 3.14159265358979323846 / 128.0;
-      self->velocityX = (double)o->current_speed.x / 256.0; //getVelocityX
-      self->velocityY = (double)o->current_speed.y / 256.0; //getVelocityY
+      self->velocityX = (double)o.current_speed_x() / 256.0; //getVelocityX
+      self->velocityY = (double)o.current_speed_y() / 256.0; //getVelocityY
       //------------------------------------------------------------------------------------------------------
-      self->groundWeaponCooldown = o->getGroundWeaponCooldown(); //getGroundWeaponCooldown
-      self->airWeaponCooldown = o->getAirWeaponCooldown(); //getAirWeaponCooldown
-      self->spellCooldown = o->spellCooldown;  //getSpellCooldown
+      self->groundWeaponCooldown = implGetGroundWeaponCooldown(); //getGroundWeaponCooldown
+      self->airWeaponCooldown = implGetAirWeaponCooldown(); //getAirWeaponCooldown
+      self->spellCooldown = o.spellCooldown();  //getSpellCooldown
 
-      self->isAttacking = o->isAttacking();
+      self->isAttacking = implIsAttacking();
       
       // startingAttack
-      int airWeaponCooldown = o->getAirWeaponCooldown();
-      int groundWeaponCooldown = o->getGroundWeaponCooldown();
-      bool startingAttack = (airWeaponCooldown > lastAirWeaponCooldown || groundWeaponCooldown > lastGroundWeaponCooldown) && o->isAttacking();
+      int airWeaponCooldown = implGetAirWeaponCooldown();
+      int groundWeaponCooldown = implGetGroundWeaponCooldown();
+      bool startingAttack = (airWeaponCooldown > lastAirWeaponCooldown || groundWeaponCooldown > lastGroundWeaponCooldown) && self->isAttacking;
       lastAirWeaponCooldown = airWeaponCooldown;
       lastGroundWeaponCooldown = groundWeaponCooldown;
 
@@ -230,22 +265,22 @@ namespace BWAPI
 
       //isAttackFrame
       self->isAttackFrame = false;
-      const BW::CUnit* damageDealer = o->getDamageDealer();
-      if (damageDealer->sprite && damageDealer->sprite->pImagePrimary)
+      BW::Unit damageDealer = implGetDamageDealer();
+      if (damageDealer.hasSprite() && damageDealer.hasSprite_pImagePrimary())
       { 
         int restFrame = _getType.isValid() ? AttackAnimationRestFrame[_getType] : -1;
         self->isAttackFrame = startingAttack || 
                              (self->isAttacking && 
                               restFrame != -1 && 
-                              (damageDealer->sprite->pImagePrimary->frameSet != restFrame ||
+                              (damageDealer.sprite_pImagePrimary_frameSet() != restFrame ||
                               lastFrameSet != restFrame) );
-        lastFrameSet = damageDealer->sprite->pImagePrimary->frameSet;
+        lastFrameSet = damageDealer.sprite_pImagePrimary_frameSet();
       }
 
-      self->isBurrowed  = o->statusFlag(BW::StatusFlags::Burrowed);  //isBurrowed
-      self->isCloaked   = o->statusFlag(BW::StatusFlags::Cloaked) && !o->statusFlag(BW::StatusFlags::Burrowed); //isCloaked
+      self->isBurrowed  = o.statusFlag(BW::StatusFlags::Burrowed);  //isBurrowed
+      self->isCloaked   = o.statusFlag(BW::StatusFlags::Cloaked) && !o.statusFlag(BW::StatusFlags::Burrowed); //isCloaked
       self->isCompleted = _isCompleted; //isCompleted
-      self->isMoving    = o->movementFlag(BW::MovementFlags::Moving | BW::MovementFlags::Accelerating) ||
+      self->isMoving    = o.movementFlag(BW::MovementFlags::Moving | BW::MovementFlags::Accelerating) ||
                           self->order == Orders::Move; //isMoving
     }
     else
@@ -275,30 +310,31 @@ namespace BWAPI
     {
       self->lastHitPoints       = wasAccessible ? self->hitPoints : _getHitPoints;  //getHitPoints
       self->hitPoints           = _getHitPoints;  //getHitPoints
-      self->shields             = _getType.maxShields() > 0 ? (int)std::ceil(o->shieldPoints/256.0) : 0;  //getShields
-      self->energy              = _getType.isSpellcaster()  ? (int)std::ceil(o->energy/256.0)       : 0;  //getEnergy
+      self->shields             = _getType.maxShields() > 0 ? (int)std::ceil(o.shieldPoints()/256.0) : 0;  //getShields
+      self->energy              = _getType.isSpellcaster()  ? (int)std::ceil(o.energy()/256.0)       : 0;  //getEnergy
       self->resources           = _getResources;                        //getResources
-      self->resourceGroup       = _getType.isResourceContainer() ? o->resource.resourceGroup : 0; //getResourceGroup
-      self->killCount           = o->killCount;        //getKillCount
-      self->acidSporeCount      = o->status.acidSporeCount;   //getAcidSporeCount
-      self->defenseMatrixPoints = o->status.defenseMatrixDamage/256;  //getDefenseMatrixPoints
-      self->defenseMatrixTimer  = o->status.defenseMatrixTimer; //getDefenseMatrixTimer
-      self->ensnareTimer        = o->status.ensnareTimer;     //getEnsnareTimer
-      self->irradiateTimer      = o->status.irradiateTimer;   //getIrradiateTimer
-      self->lockdownTimer       = o->status.lockdownTimer;    //getLockdownTimer
-      self->maelstromTimer      = o->status.maelstromTimer;   //getMaelstromTimer
-      self->orderTimer          = o->mainOrderTimer;   //getOrderTimer
-      self->plagueTimer         = o->status.plagueTimer;      //getPlagueTimer
-      self->removeTimer         = o->status.removeTimer;      //getRemoveTimer
-      self->stasisTimer         = o->status.stasisTimer;      //getStasisTimer
-      self->stimTimer           = o->status.stimTimer;        //getStimTimer
-      self->order               = o->orderID;          //getOrder
-      self->secondaryOrder      = o->secondaryOrderID; //getSecondaryOrder
-      self->buildUnit           = o->currentBuildUnit ? BroodwarImpl.server.getUnitID(UnitImpl::BWUnitToBWAPIUnit(o->currentBuildUnit)) : -1; //getBuildUnit
+      //self->resourceGroup       = _getType.isResourceContainer() ? o.resourceGroup() : 0; //getResourceGroup
+      self->resourceGroup       = 0; //getResourceGroup
+      self->killCount           = o.killCount();        //getKillCount
+      self->acidSporeCount      = o.acidSporeCount();   //getAcidSporeCount
+      self->defenseMatrixPoints = o.defenseMatrixDamage()/256;  //getDefenseMatrixPoints
+      self->defenseMatrixTimer  = o.defenseMatrixTimer(); //getDefenseMatrixTimer
+      self->ensnareTimer        = o.ensnareTimer();     //getEnsnareTimer
+      self->irradiateTimer      = o.irradiateTimer();   //getIrradiateTimer
+      self->lockdownTimer       = o.lockdownTimer();    //getLockdownTimer
+      self->maelstromTimer      = o.maelstromTimer();   //getMaelstromTimer
+      self->orderTimer          = o.mainOrderTimer();   //getOrderTimer
+      self->plagueTimer         = o.plagueTimer();      //getPlagueTimer
+      self->removeTimer         = o.removeTimer();      //getRemoveTimer
+      self->stasisTimer         = o.stasisTimer();      //getStasisTimer
+      self->stimTimer           = o.stimTimer();        //getStimTimer
+      self->order               = o.orderID();          //getOrder
+      self->secondaryOrder      = o.secondaryOrderID(); //getSecondaryOrder
+      self->buildUnit           = o.currentBuildUnit() ? BroodwarImpl.server.getUnitID(BroodwarImpl.getUnitFromBWUnit(o.currentBuildUnit())) : -1; //getBuildUnit
       //------------------------------------------------------------------------------------------------------
       //isTraining
       if (_getType == UnitTypes::Terran_Nuclear_Silo &&
-          o->secondaryOrderID == Orders::Train)
+          o.secondaryOrderID() == Orders::Train)
         self->isTraining = true;
       else if (!_getType.canProduce())
         self->isTraining = false;
@@ -358,24 +394,24 @@ namespace BWAPI
                        self->order == Orders::Burrowed     ||
                        self->order == Orders::NukeTrain    ||
                        self->order == Orders::Larva;
-      self->target               = BroodwarImpl.server.getUnitID(UnitImpl::BWUnitToBWAPIUnit(o->moveTarget.pUnit)); //getTarget
-      self->targetPositionX      = o->moveTarget.pt.x;  //getTargetPosition
-      self->targetPositionY      = o->moveTarget.pt.y;  //getTargetPosition
-      self->orderTargetPositionX = o->orderTarget.pt.x;
-      self->orderTargetPositionY = o->orderTarget.pt.y;
-      self->orderTarget          = BroodwarImpl.server.getUnitID(UnitImpl::BWUnitToBWAPIUnit(o->orderTarget.pUnit));  //getOrderTarget
+      self->target               = BroodwarImpl.server.getUnitID(BroodwarImpl.getUnitFromBWUnit(o.moveTarget_pUnit())); //getTarget
+      self->targetPositionX      = o.moveTarget().x;  //getTargetPosition
+      self->targetPositionY      = o.moveTarget().y;  //getTargetPosition
+      self->orderTargetPositionX = o.orderTarget().x;
+      self->orderTargetPositionY = o.orderTarget().y;
+      self->orderTarget          = BroodwarImpl.server.getUnitID(BroodwarImpl.getUnitFromBWUnit(o.orderTarget_pUnit()));  //getOrderTarget
       //------------------------------------------------------------------------------------------------------
       //getAddon
       self->addon = -1;
       if (_getType.isBuilding())
       {
-        UnitImpl* addon = UnitImpl::BWUnitToBWAPIUnit(o->currentBuildUnit);
-        if ( addon && addon->isAlive && addon->getOriginalRawData->type().isAddon() )
+        UnitImpl* addon = BroodwarImpl.getUnitFromBWUnit(o.currentBuildUnit());
+        if ( addon && addon->isAlive && UnitType(addon->bwunit.unitType()).isAddon() )
           self->addon = BroodwarImpl.server.getUnitID(addon);
         else
         {
-          addon = UnitImpl::BWUnitToBWAPIUnit(o->building.addon);
-          if ( addon && addon->isAlive && addon->getOriginalRawData->type().isAddon() )
+          addon = BroodwarImpl.getUnitFromBWUnit(o.building_addon());
+          if ( addon && addon->isAlive && UnitType(addon->bwunit.unitType()).isAddon() )
             self->addon = BroodwarImpl.server.getUnitID(addon);
         }
       }
@@ -384,58 +420,61 @@ namespace BWAPI
       self->nydusExit = -1;
       if ( _getType == UnitTypes::Zerg_Nydus_Canal )
       {
-        UnitImpl* nydus = UnitImpl::BWUnitToBWAPIUnit(o->nydus.exit);
-        if ( nydus && nydus->isAlive && nydus->getOriginalRawData->unitType == UnitTypes::Zerg_Nydus_Canal )
+        UnitImpl* nydus = BroodwarImpl.getUnitFromBWUnit(o.nydus_exit());
+        if ( nydus && nydus->isAlive && nydus->bwunit.unitType() == UnitTypes::Zerg_Nydus_Canal )
           self->nydusExit = BroodwarImpl.server.getUnitID(nydus);
       }
       //------------------------------------------------------------------------------------------------------
       //getPowerUp
       self->powerUp = -1;
-      UnitImpl* powerUp = UnitImpl::BWUnitToBWAPIUnit(o->worker.pPowerup);
+      UnitImpl* powerUp = BroodwarImpl.getUnitFromBWUnit(o.worker_pPowerup());
       if (powerUp && powerUp->isAlive)
         self->powerUp = BroodwarImpl.server.getUnitID(powerUp);
 
-      self->isAccelerating  = o->movementFlag(BW::MovementFlags::Accelerating);  //isAccelerating
-      self->isBeingGathered = _getType.isResourceContainer() && (o->resource.gatherQueueCount || o->resource.nextGatherer);  //isBeingGathered
-      self->isBlind         = o->status.isBlind != 0;   //isBlind
-      self->isBraking       = o->movementFlag(BW::MovementFlags::Braking);   //isBraking
+      self->isAccelerating  = o.movementFlag(BW::MovementFlags::Accelerating);  //isAccelerating
+      self->isBeingGathered = _getType.isResourceContainer() && (o.gatherQueueCount() || o.nextGatherer());  //isBeingGathered
+      self->isBlind         = o.isBlind() != 0;   //isBlind
+      self->isBraking       = o.movementFlag(BW::MovementFlags::Braking);   //isBraking
       //------------------------------------------------------------------------------------------------------
       //isCarryingGas, isCarryingMinerals
-      self->carryResourceType = _getType.isWorker() ? o->resourceType : 0;
+      self->carryResourceType = _getType.isWorker() ? o.resourceType() : 0;
 
-      self->isGathering     = _getType.isWorker() && o->statusFlag(BW::StatusFlags::IsGathering);   //isGatheringMinerals; isGatheringGas
-      self->isLifted        = o->statusFlag(BW::StatusFlags::InAir) &&
-                              o->type().isBuilding(); //isLifted
-      self->isParasited     = o->status.parasiteFlags != 0; //isParasited
+      self->isGathering     = _getType.isWorker() && o.statusFlag(BW::StatusFlags::IsGathering);   //isGatheringMinerals; isGatheringGas
+      self->isLifted        = o.statusFlag(BW::StatusFlags::InAir) &&
+                              UnitType(o.unitType()).isBuilding(); //isLifted
+      self->isParasited     = o.parasiteFlags() != 0; //isParasited
       self->isSelected      = BWAPI::BroodwarImpl.isFlagEnabled(BWAPI::Flag::UserInput) && userSelected; //isSelected
-      self->isUnderStorm    = o->status.stormTimer != 0; //isUnderStorm
-      self->isPowered       = !(_getType.getRace() == Races::Protoss && _getType.isBuilding() && o->statusFlag(BW::StatusFlags::DoodadStatesThing)); // !isUnpowered
-      self->isStuck         = o->movementState == BW::UM_MoveToLegal;
-      self->isInterruptible = !o->statusFlag(BW::StatusFlags::CanNotReceiveOrders); //isInterruptible
-      self->isInvincible    = o->statusFlag(BW::StatusFlags::Invincible); //isInvincible
-      self->buttonset       = o->currentButtonSet;
-      self->lastAttackerPlayer = o->lastAttackingPlayer;
-      self->recentlyAttacked = o->lastEventColor == 174 ? o->lastEventTimer != 0 : false;
+      self->isUnderStorm    = o.stormTimer() != 0; //isUnderStorm
+      self->isPowered       = !(_getType.getRace() == Races::Protoss && _getType.isBuilding() && o.statusFlag(BW::StatusFlags::DoodadStatesThing)); // !isUnpowered
+      self->isStuck         = o.movementState() == BW::UM_MoveToLegal;
+      self->isInterruptible = !o.statusFlag(BW::StatusFlags::CanNotReceiveOrders); //isInterruptible
+      self->isInvincible    = o.statusFlag(BW::StatusFlags::Invincible); //isInvincible
+      //self->buttonset       = o.currentButtonSet();
+      self->buttonset       = 0;
+      //self->lastAttackerPlayer = o.lastAttackingPlayer();
+      self->lastAttackerPlayer = 0;
+      //self->recentlyAttacked = o.lastEventColor == 174 ? o.lastEventTimer != 0 : false;
+      self->recentlyAttacked = false;
 
       switch (_getType)
       {
       case UnitTypes::Enum::Protoss_Reaver:
       case UnitTypes::Enum::Hero_Warbringer:
-        self->scarabCount = o->carrier.inHangerCount;
+        self->scarabCount = o.carrier_inHangerCount();
         break;
       case UnitTypes::Enum::Terran_Vulture:
       case UnitTypes::Enum::Hero_Jim_Raynor_Vulture:
-        self->spiderMineCount = o->vulture.spiderMineCount;
+        self->spiderMineCount = o.vulture_spiderMineCount();
         break;
       case UnitTypes::Enum::Protoss_Carrier:
       case UnitTypes::Enum::Hero_Gantrithor:
-        self->interceptorCount = o->carrier.inHangerCount + o->carrier.outHangerCount;
+        self->interceptorCount = o.carrier_inHangerCount() + o.carrier_outHangerCount();
         break;
       case UnitTypes::Enum::Protoss_Interceptor:
-        self->carrier = BroodwarImpl.server.getUnitID(UnitImpl::BWUnitToBWAPIUnit(o->fighter.parent));
+        self->carrier = BroodwarImpl.server.getUnitID(BroodwarImpl.getUnitFromBWUnit(o.fighter_parent()));
         break;
       case UnitTypes::Enum::Zerg_Larva:
-        self->hatchery = BroodwarImpl.server.getUnitID(UnitImpl::BWUnitToBWAPIUnit(o->connectedUnit));
+        self->hatchery = BroodwarImpl.server.getUnitID(BroodwarImpl.getUnitFromBWUnit(o.connectedUnit()));
         break;
       default:
         break;
@@ -533,20 +572,20 @@ namespace BWAPI
       }
       //------------------------------------------------------------------------------------------------------
       // getRemainingTrainTime
-      if ( o->currentBuildUnit )
-        self->remainingTrainTime = o->currentBuildUnit->remainingBuildTime;
+      if ( o.currentBuildUnit() )
+        self->remainingTrainTime = o.currentBuildUnit().remainingBuildTime();
 
       //------------------------------------------------------------------------------------------------------
       // Unit Type switch; special cases
       switch ( _getType )
       {
       case UnitTypes::Enum::Terran_Nuclear_Silo:
-        if (o->secondaryOrderID == Orders::Train)
+        if (o.secondaryOrderID() == Orders::Train)
         {
           self->trainingQueue[0]   = UnitTypes::Enum::Terran_Nuclear_Missile;
           self->trainingQueueCount = 1;
         }
-        self->hasNuke = (o->silo.bReady != 0);
+        self->hasNuke = (o.silo_bReady() != 0);
         break;
       case UnitTypes::Enum::Zerg_Hatchery:
       case UnitTypes::Enum::Zerg_Lair:
@@ -554,7 +593,7 @@ namespace BWAPI
         if ( !self->isCompleted && self->buildType == UnitTypes::Enum::Zerg_Hatchery )
           self->remainingTrainTime = self->remainingBuildTime;
         else
-          self->remainingTrainTime = o->building.larvaTimer * 9 + ((o->orderQueueTimer + 8) % 9);
+          self->remainingTrainTime = o.building_larvaTimer() * 9 + ((o.orderQueueTimer() + 8) % 9);
         break;
       default:
         break;
@@ -570,12 +609,12 @@ namespace BWAPI
           break;
         case Orders::Enum::ConstructingBuilding:
           if ( self->buildUnit != -1 )
-            self->buildType = static_cast<UnitImpl*>(getBuildUnit())->getOriginalRawData->unitType;
+            self->buildType = static_cast<UnitImpl*>(getBuildUnit())->bwunit.unitType();
           break;
         case Orders::Enum::IncompleteMorphing:
           {
             UnitType type = getBuildQueue[getBuildQueueSlot % 5];
-            self->buildType = type == UnitTypes::None ? self->type : type;
+            self->buildType = type == UnitTypes::None ? self->type : (int)type;
           }
           break;
         case Orders::Enum::PlaceBuilding:
@@ -586,12 +625,12 @@ namespace BWAPI
           self->buildType = getBuildQueue[(getBuildQueueSlot % 5)];
           break;
         case Orders::Enum::ResearchTech:
-          self->tech = o->building.techType;
-          self->remainingResearchTime = o->building.upgradeResearchTime;
+          self->tech = o.building_techType();
+          self->remainingResearchTime = o.building_upgradeResearchTime();
           break;
         case Orders::Enum::Upgrade:
-          self->upgrade = o->building.upgradeType;
-          self->remainingUpgradeTime = o->building.upgradeResearchTime;
+          self->upgrade = o.building_upgradeType();
+          self->remainingUpgradeTime = o.building_upgradeResearchTime();
           break;
       }
 
@@ -604,13 +643,13 @@ namespace BWAPI
       //------------------------------------------------------------------------------------------------------
       //getRemainingBuildTime
       if ( !self->isCompleted && (!self->isMorphing || self->buildType != UnitTypes::None) )
-        self->remainingBuildTime = o->remainingBuildTime;
+        self->remainingBuildTime = o.remainingBuildTime();
       //------------------------------------------------------------------------------------------------------
       //getRallyPosition
       if (this->_getType.canProduce())
       {
-        self->rallyPositionX = o->rally.position.x;
-        self->rallyPositionY = o->rally.position.y;
+        self->rallyPositionX = o.rally_position().x;
+        self->rallyPositionY = o.rally_position().y;
       }
       else
       {
@@ -620,10 +659,10 @@ namespace BWAPI
       //------------------------------------------------------------------------------------------------------
       //getRallyUnit
       if ( this->_getType.canProduce() )
-        self->rallyUnit = BroodwarImpl.server.getUnitID(UnitImpl::BWUnitToBWAPIUnit(o->rally.unit));
+        self->rallyUnit = BroodwarImpl.server.getUnitID(BroodwarImpl.getUnitFromBWUnit(o.rally_unit()));
 
       self->transport       = BroodwarImpl.server.getUnitID(_getTransport);   //getTransport
-      self->isHallucination = o->statusFlag(BW::StatusFlags::IsHallucination);  //isHallucination
+      self->isHallucination = o.statusFlag(BW::StatusFlags::IsHallucination);  //isHallucination
     }
     else
     {

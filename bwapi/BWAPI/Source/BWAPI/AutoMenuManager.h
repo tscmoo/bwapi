@@ -4,6 +4,7 @@
 #include <array>
 
 #include <BW/Constants.h>
+#include "BW/BWData.h"
 
 namespace BW
 {
@@ -15,18 +16,24 @@ namespace BWAPI
   class AutoMenuManager
   {
   public:
-    AutoMenuManager();
+    AutoMenuManager(BW::Game bwgame);
 
     void reloadConfig();
     void chooseNewRandomMap();
     void onMenuFrame();
+    
+    void startGame();
 
     // cppcheck-suppress functionConst
-    const char* interceptFindFirstFile(const char *lpFileName);
+    //const char* interceptFindFirstFile(const char *lpFileName);
 
     std::string autoMenuSaveReplay;
   private:
-    static void pressDialogKey(BW::dialog *pDlg);
+    //static void pressDialogKey(BW::dialog *pDlg);
+    
+    unsigned int getLobbyPlayerCount();
+    unsigned int getLobbyPlayerReadyCount();
+    unsigned int getLobbyOpenCount();
 
     std::string autoMenuMode;
     std::string autoMenuCharacterName;
@@ -52,6 +59,8 @@ namespace BWAPI
 
     bool actStartedGame = false;
     bool actRaceSel = false;
+    
+    BW::Game bwgame;
 
 #ifdef _DEBUG
     std::string autoMenuPause;

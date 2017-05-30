@@ -1,11 +1,11 @@
 #pragma once
 #include <Util/Types.h>
+#include "BW/BWData.h"
 
 namespace BWAPI { class UnitInterface; typedef UnitInterface* Unit; }
 #pragma pack(1)
 namespace BW
 {
-  class CUnit;
   /**
    * Representation of pointer to unit in bw structure that uses index (not
    * pointer). When pointer to another unit is present in bw structure, it uses
@@ -24,8 +24,8 @@ namespace BW
       UnitTarget();
 
       /// Constructor, takes BWAPI unit pointer, and decodes it to bw index type.
-      UnitTarget(const BWAPI::Unit target);
-      UnitTarget(const BW::CUnit* target);
+      UnitTarget(BWAPI::Unit target);
+      UnitTarget(BW::Unit target);
       u16 getTarget() const;
     private :
       u16 targetID = 0; /// Unit index pointer stored in the way bw understands it

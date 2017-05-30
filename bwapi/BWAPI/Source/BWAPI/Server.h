@@ -1,5 +1,4 @@
 #pragma once
-#include <windows.h>
 
 #include <vector>
 #include <unordered_map>
@@ -51,9 +50,6 @@ namespace BWAPI
     void processCommands();
     void setWaitForResponse(bool wait);
 
-    HANDLE pipeObjectHandle = nullptr;
-    HANDLE mapFileHandle = nullptr;
-    HANDLE gameTableFileHandle = nullptr;
     GameTable* gameTable = nullptr;
     int gameTableIndex = -1;
     bool connected = false;
@@ -68,8 +64,5 @@ namespace BWAPI
     std::vector<Unit> unitVector;
     std::unordered_map<Unit, int> unitLookup;
 
-    PSID pEveryoneSID = nullptr;
-    PACL pACL = nullptr;
-    PSECURITY_DESCRIPTOR pSD = nullptr;
   };
 }

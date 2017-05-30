@@ -8,13 +8,9 @@
 #include <BWAPI/WeaponType.h>
 
 #include "Command.h"
-#include "../DLLMain.h"
-#include "../Detours.h"
 #include "Templates.h"
 
-#include <BW/CUnit.h>
-#include <BW/COrder.h>
-#include <BW/Offsets.h>
+#include <BW/BWData.h>
 #include <BW/OrderTypes.h>
 
 #include "../../../Debug.h"
@@ -22,8 +18,8 @@
 namespace BWAPI
 {
   //--------------------------------------------- CONSTRUCTOR ------------------------------------------------
-  UnitImpl::UnitImpl(BW::CUnit* originalUnit, u16 index)
-      : getOriginalRawData(originalUnit)
+  UnitImpl::UnitImpl(BW::Unit bwunit, u16 index)
+      : bwunit(bwunit)
       , index(index)
   {
     clear();
@@ -101,7 +97,7 @@ namespace BWAPI
       //select both units for archon warp or dark archon meld
       Unit sel2[2] = { command.unit, command.target };
       BW::Orders::Select sel(2, sel2);
-      QueueGameCommand(&sel, sel.size());
+      BroodwarImpl.bwgame.QueueCommand(&sel, sel.size());
       BroodwarImpl.apmCounter.addSelect();
     }
     else if (command.type != UnitCommandTypes::Unload || BroodwarImpl.commandOptimizer.level < 2)
@@ -124,26 +120,25 @@ namespace BWAPI
   {
     Unit u = this;
     BW::Orders::Select sel = BW::Orders::Select(1, &u);
-    QueueGameCommand(&sel, sel.size());
+    BroodwarImpl.bwgame.QueueCommand(&sel, sel.size());
     BroodwarImpl.apmCounter.addSelect();
   }
   //----------------------------------------------------------------------------------------------------------
-  UnitImpl* UnitImpl::BWUnitToBWAPIUnit(BW::CUnit* unit)
-  {
-    if ( !unit )
-      return nullptr;
+//  UnitImpl* UnitImpl::BWUnitToBWAPIUnit(BW::CUnit* unit)
+//  {
+//    if ( !unit )
+//      return nullptr;
 
-    int index = unit - BW::BWDATA::UnitNodeTable.data();
-    if (index > BW::UNIT_ARRAY_MAX_LENGTH)
-    {
-      return nullptr;
-    }
-    return BroodwarImpl.getUnitFromIndex(index);
-  }
+//    int index = unit - BW::BWDATA::UnitNodeTable.data();
+//    if (index > BW::UNIT_ARRAY_MAX_LENGTH)
+//    {
+//      return nullptr;
+//    }
+//    return BroodwarImpl.getUnitFromIndex(index);
+//  }
 
   void UnitImpl::die()
   {
-    index              = 0xFFFF;
     userSelected       = false;
     isAlive            = false;
     wasAlive           = false;
@@ -159,7 +154,7 @@ namespace BWAPI
     updateInternalData();
 
     //set pointers to null so we don't read information from unit table anymore
-    getOriginalRawData = nullptr;
+    bwunit = {};
 
     updateData();
   }
@@ -216,14 +211,9 @@ namespace BWAPI
     return BroodwarImpl.isFlagEnabled(Flag::CompleteMapInformation);
   }
 
-  //--------------------------------------------- GET NEXT ---------------------------------------------------
-  UnitImpl* UnitImpl::getNext() const
-  {
-    return UnitImpl::BWUnitToBWAPIUnit(getOriginalRawData->next);
-  }
   //--------------------------------------------- GET INDEX --------------------------------------------------
   u16 UnitImpl::getIndex() const
   {
-    return this->index;
+    return (u16)bwunit.getIndex();
   }
 };

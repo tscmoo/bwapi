@@ -4,15 +4,9 @@
 #include <memory>
 #include <Util/Sha1.h>
 
-#include <Util/Path.h>
-
-#include "../DLLMain.h"
 #include "../Config.h"
 
-#include <BW/Offsets.h>
-#include <BW/TileSet.h>
-#include <BW/TileType.h>
-#include <BW/MiniTileFlags.h>
+#include <BW/BWData.h>
 #include "GameImpl.h"
 #include "PlayerImpl.h"
 
@@ -21,39 +15,49 @@
 using namespace std;
 namespace BWAPI
 {
-  //----------------------------------------------- GET WIDTH ------------------------------------------------
-  u16 Map::getWidth()
+  Map::Map(BW::Game bwgame) : bwgame(bwgame)
   {
-    return BW::BWDATA::Game.mapTileSize.x;
+  }
+
+  //----------------------------------------------- GET WIDTH ------------------------------------------------
+  u16 Map::getWidth() const
+  {
+    return bwgame.mapTileSize_x();
   }
   //----------------------------------------------- GET HEIGHT -----------------------------------------------
-  u16 Map::getHeight()
+  u16 Map::getHeight() const
   {
-    return BW::BWDATA::Game.mapTileSize.y;
+    return bwgame.mapTileSize_y();
   }
   //---------------------------------------------- GET PATH NAME ---------------------------------------------
-  std::string Map::getPathName()
+  std::string Map::getPathName() const
   {
-    std::string mapPath( BW::BWDATA::Game.mapFileName );
+    std::string mapPath( bwgame.mapFileName() );
 
     // If the install path is included in the map path, remove it, creating a relative path
-    if (!installPath().empty() && mapPath.compare(0, installPath().length(), installPath()) == 0)
+    auto path = installPath();
+    if (!path.empty() && mapPath.compare(0, path.length(), path) == 0)
       mapPath.erase(0, installPath().length());
 
     return mapPath;
   }
   //---------------------------------------------- GET FILE NAME ---------------------------------------------
-  std::string Map::getFileName()
+  std::string Map::getFileName() const
   {
-    Util::Path mapPath( BW::BWDATA::Game.mapFileName );
-    return mapPath.filename().string();
+    const char* c = bwgame.mapFileName();
+    const char* r = c;
+    while (*c) {
+      if (*c == '/' || *c == '\\') r = c + 1;
+      ++c;
+    }
+    return r;
   }
   //------------------------------------------------ GET NAME ------------------------------------------------
-  std::string Map::getName()
+  std::string Map::getName() const
   {
-    return BW::BWDATA::Game.mapTitle;
+    return bwgame.mapTitle();
   }
-  void Map::copyToSharedMemory()
+  void Map::copyToSharedMemory() const
   {
     const int width = getWidth();
     const int height = getHeight();
@@ -65,7 +69,7 @@ namespace BWAPI
       {
         for(int y = 0; y < height; ++y)
         {
-          BW::activeTile tileData = getActiveTile(x, y);
+          auto tileData = bwgame.getActiveTile(x, y);
           data->isVisible[x][y]  = tileData.bVisibilityFlags   != 255;
           data->isExplored[x][y] = tileData.bExploredFlags     != 255;
           data->hasCreep[x][y]   = tileData.bTemporaryCreep    != 0;
@@ -81,7 +85,7 @@ namespace BWAPI
       {
         for(int y = 0; y < height; ++y)
         {
-          const BW::activeTile tileData = getActiveTile(x, y);
+          auto tileData = bwgame.getActiveTile(x, y);
           data->isVisible[x][y]   = !(tileData.bVisibilityFlags & playerFlag);
           data->isExplored[x][y]  = !(tileData.bExploredFlags & playerFlag);
           data->hasCreep[x][y]    = (data->isVisible[x][y] || completeMapInfo) && (tileData.bTemporaryCreep != 0 || tileData.bHasCreep != 0);
@@ -91,109 +95,80 @@ namespace BWAPI
     }
   }
   //------------------------------------------------ BUILDABLE -----------------------------------------------
-  bool Map::buildable(int x, int y)
+  bool Map::buildable(int x, int y) const
   {
-    return getActiveTile(x, y).bAlwaysUnbuildable == 0;
+    if ((unsigned)x >= getWidth() || (unsigned)y >= getHeight())
+      return false;
+    return bwgame.buildable(x, y);
   }
   //------------------------------------------------ WALKABLE ------------------------------------------------
-  bool Map::walkable(int x, int y)
+  bool Map::walkable(int x, int y) const
   {
-    if (y >= getHeight()*4 - 4)
+    if ((unsigned)y >= getHeight()*4u - 4u || (unsigned)x / 4 >= getWidth())
       return false;
     if (y >= getHeight() * 4 - 8 && (x < 20 || x >= getWidth() * 4 - 20))
       return false;
-    return (Map::getMiniTile(x, y) & BW::MiniTileFlags::Walkable) != 0;
+    return bwgame.walkable(x, y);
   }
   //------------------------------------------------ VISIBLE -------------------------------------------------
-  bool Map::visible(int x, int y)
+  bool Map::visible(int x, int y) const
   {
-    BW::activeTile value = getActiveTile(x, y);
+    if ((unsigned)x >= getWidth() || (unsigned)y >= getHeight())
+      return false;
     if ( BroodwarImpl.isReplay() )
-      return value.bVisibilityFlags != 255;
-    return !(value.bVisibilityFlags & (1 << BroodwarImpl.BWAPIPlayer->getIndex()));
+      return bwgame.bVisibilityFlags(x, y) != 255;
+    return !(bwgame.bVisibilityFlags(x, y) & (1 << BroodwarImpl.BWAPIPlayer->getIndex()));
   }
   //--------------------------------------------- HAS EXPLORED -----------------------------------------------
-  bool Map::isExplored(int x, int y)
+  bool Map::isExplored(int x, int y) const
   {
-    BW::activeTile value = getActiveTile(x, y);
+    if ((unsigned)x >= getWidth() || (unsigned)y >= getHeight())
+      return false;
     if ( BroodwarImpl.isReplay() )
-      return value.bExploredFlags != 255;
-    return !(value.bExploredFlags & (1 << BroodwarImpl.BWAPIPlayer->getIndex()));
+      return bwgame.bExploredFlags(x, y) != 255;
+    return !(bwgame.bExploredFlags(x, y) & (1 << BroodwarImpl.BWAPIPlayer->getIndex()));
   }
   //----------------------------------------------- HAS CREEP ------------------------------------------------
-  bool Map::hasCreep(int x, int y)
+  bool Map::hasCreep(int x, int y) const
   {
-    return getActiveTile(x, y).bTemporaryCreep != 0 || getActiveTile(x, y).bHasCreep != 0;
+    if ((unsigned)x >= getWidth() || (unsigned)y >= getHeight())
+      return false;
+    return bwgame.hasCreep(x, y);
   }
   //---------------------------------------------- IS OCCUPIED -----------------------------------------------
-  bool Map::isOccupied(int x, int y)
+  bool Map::isOccupied(int x, int y) const
   {
-    return getActiveTile(x, y).bCurrentlyOccupied != 0;
+    if ((unsigned)x >= getWidth() || (unsigned)y >= getHeight())
+      return false;
+    return bwgame.isOccupied(x, y);
   }
   //--------------------------------------------- GROUND HEIGHT ----------------------------------------------
-  int Map::groundHeight(int x, int y)
+  int Map::groundHeight(int x, int y) const
   {
-    return getActiveTile(x, y).bGroundHeight;
-  }
-  //------------------------------------------------ GET TILE ------------------------------------------------
-  BW::TileID Map::getTile(int x, int y)
-  {
-    if ( BW::BWDATA::MapTileArray && static_cast<unsigned>(x) < getWidth() && static_cast<unsigned>(y) < getHeight())
-      return BW::BWDATA::MapTileArray[x + y * Map::getWidth()];
-    return 0;
-  }
-  //------------------------------------------- GET TILE VARIATION -------------------------------------------
-  u8 Map::getTileVariation(BW::TileID tileType)
-  {
-    return tileType & 0xF;
-  }
-  //--------------------------------------------- GET MINITILE -----------------------------------------------
-  u16 Map::getMiniTile(int x, int y)
-  {
-    int tx = x / 4;
-    int ty = y / 4;
-    int mx = x % 4;
-    int my = y % 4;
-    BW::TileID tileID = BWAPI::Map::getTile(tx, ty);
-    BW::TileType* tile = BW::TileSet::getTileType(tileID);
-    if ( tile && BW::BWDATA::MiniTileFlags )
-      return BW::BWDATA::MiniTileFlags->tile[tile->megaTileRef[Map::getTileVariation(tileID)]].miniTile[mx + my*4];
-    return 0;
+    if ((unsigned)x >= getWidth() || (unsigned)y >= getHeight())
+      return 0;
+    return bwgame.groundHeight(x, y);
   }
   //------------------------------------------ GET MAP HASH --------------------------------------------------
-  std::string Map::savedMapHash;
-
   std::string Map::calculateMapHash()
   {
     unsigned char hash[20];
     char hexstring[sizeof(hash)*2 + 1];
-    std::string filename = Map::getPathName();
-
-    // Open File
-    Storm::CFile file;
-    if ( !file.open(filename, SFILE_FROM_ABSOLUTE) )
-    {
-      filename += "\\staredit\\scenario.chk";
-      if ( !file.open(filename, SFILE_FROM_MPQ) )
-        return Map::savedMapHash = "Error_map_cannot_be_opened";
-    }
-
-    size_t fileSize = file.size();
-    std::vector<char> data(fileSize);
+    std::vector<char> data;
 
     // Read file
-    if ( !file.read(data.data(), fileSize) )
-      return Map::savedMapHash = "Error_unable_to_read_file";
+    if ( !bwgame.getScenarioChk(data) || data.empty())
+      return Map::savedMapHash = "Error_map_cannot_be_opened";
 
     // Calculate hash
-    sha1::calc(data.data(), fileSize, hash);
+    sha1::calc(data.data(), data.size(), hash);
     sha1::toHexString(hash, hexstring);
 
-    return Map::savedMapHash = hexstring;
+    return savedMapHash = hexstring;
   }
-  std::string Map::getMapHash()
+  std::string Map::getMapHash() const
   {
-    return Map::savedMapHash;
+    return savedMapHash;
   }
   //----------------------------------------------------------------------------------------------------------
 };

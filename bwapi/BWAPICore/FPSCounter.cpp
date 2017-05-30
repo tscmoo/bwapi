@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <string>
 
 using namespace BWAPI;
 using namespace std::literals::chrono_literals;

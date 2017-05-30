@@ -69,7 +69,7 @@ namespace BW
     {
     public:
       SelectAdd(int count, const BWAPI::Unit *units);
-      SelectAdd(int count, const BW::CUnit **units);
+      //SelectAdd(int count, const BW::CUnit **units);
 
       size_t size() const;
     private:
@@ -82,7 +82,7 @@ namespace BW
     {
     public:
       Select(int count, const BWAPI::Unit *units);
-      Select(int count, const BW::CUnit **units);
+      //Select(int count, const BW::CUnit **units);
       Select(const std::vector<BWAPI::Unit>& units);
 
       size_t size() const;

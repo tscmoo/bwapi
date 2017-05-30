@@ -3,7 +3,7 @@
 #include <BWAPI.h>
 #include <vector>
 
-#include <BWAPi/Unitset.h>
+#include <BWAPI/Unitset.h>
 
 class TransportTest : public TestCase
 {

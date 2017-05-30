@@ -9,6 +9,8 @@
 #include "UnitImpl.h"
 #include "ForceImpl.h"
 
+#include "BW/BWData.h"
+
 namespace BWAPI
 {
   // Forwards
@@ -81,12 +83,16 @@ namespace BWAPI
       virtual bool isResearchAvailable(TechType tech) const override;
       virtual bool isUnitAvailable(UnitType unit) const override;
 
+      virtual void setRace(Race race) override;
+      virtual void closeSlot() override;
+      virtual void openSlot() override;
+
       //Internal BWAPI commands:
       /**
        * Constructs new player
        * @param id 0-based Index of the player (11 for resources as it is player 12)
        */
-      PlayerImpl(u8 index);
+      PlayerImpl(u8 index, BW::Player bwplayer);
       int getIndex() const;      // Gets 0-based index of the player. (11 for neutral)
 
 
@@ -103,6 +109,8 @@ namespace BWAPI
       void resetResources();
       
     // data members
+      BW::Player bwplayer;
+      
       ForceImpl*  force = nullptr;
       PlayerData  data = PlayerData();
       PlayerData* self = &data;

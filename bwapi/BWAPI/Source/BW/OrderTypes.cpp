@@ -70,15 +70,15 @@ namespace BW
           targets[targCount++] = UnitTarget(units[i]);
       }
     }
-    SelectAdd::SelectAdd(int count, const BW::CUnit **units)
-    {
-      targCount = 0;
-      for (int i = 0; i < count && i < MAX_SELECTION_COUNT; ++i)
-      {
-        if (units[i])
-          targets[targCount++] = UnitTarget(units[i]);
-      }
-    }
+//    SelectAdd::SelectAdd(int count, const BW::CUnit **units)
+//    {
+//      targCount = 0;
+//      for (int i = 0; i < count && i < MAX_SELECTION_COUNT; ++i)
+//      {
+//        if (units[i])
+//          targets[targCount++] = UnitTarget(units[i]);
+//      }
+//    }
     size_t SelectAdd::size() const
     {
       return 2 + targCount * 2;
@@ -93,15 +93,15 @@ namespace BW
           targets[targCount++] = UnitTarget(units[i]);
       }
     }
-    Select::Select(int count, const BW::CUnit **units)
-    {
-      targCount = 0;
-      for (int i = 0; i < count && i < MAX_SELECTION_COUNT; ++i)
-      {
-        if (units[i])
-          targets[targCount++] = UnitTarget(units[i]);
-      }
-    }
+//    Select::Select(int count, const BW::CUnit **units)
+//    {
+//      targCount = 0;
+//      for (int i = 0; i < count && i < MAX_SELECTION_COUNT; ++i)
+//      {
+//        if (units[i])
+//          targets[targCount++] = UnitTarget(units[i]);
+//      }
+//    }
     Select::Select(const std::vector<BWAPI::Unit>& units)
       : Select(static_cast<int>(units.size()), units.data())
     {

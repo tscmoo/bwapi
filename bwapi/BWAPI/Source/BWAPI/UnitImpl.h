@@ -7,10 +7,8 @@
 #include <BWAPI/UnitCommand.h>
 #include <BWAPI/Client/UnitData.h>
 
-namespace BW
-{ 
-  class CUnit;
-};
+#include "BW/BWData.h"
+
 namespace BWAPI
 {
   // Forwards
@@ -243,8 +241,7 @@ namespace BWAPI
       virtual bool issueCommand(UnitCommand command) override;
 
       //Internal BWAPI commands:
-      UnitImpl(BW::CUnit* originalUnit, u16 index);
-      static UnitImpl* BWUnitToBWAPIUnit(BW::CUnit* unit);
+      UnitImpl(BW::Unit bwunit, u16 index);
       void die();
       void setID(int newID);
       bool canAccess() const;
@@ -260,7 +257,11 @@ namespace BWAPI
       u16 getIndex() const;
       void setSelected(bool selectedState);
       void setLoaded(bool loadedState);
-      UnitImpl* getNext() const;
+      
+      BW::Unit implGetDamageDealer() const;
+      int implGetGroundWeaponCooldown() const;
+      int implGetAirWeaponCooldown() const;
+      bool implIsAttacking() const;
 
       void saveInitialState();
       void updateInternalData();
@@ -274,8 +275,6 @@ namespace BWAPI
       int _getHitPoints;
       Unit _getTransport;
       
-      /** Gets #bwOriginalUnit */
-      BW::CUnit* getOriginalRawData;
       /** Gets #bwUnitLocal */
       u8 getBuildQueueSlot;
       /** Gets #bwUnit->BW#Unit#buildQueue */
@@ -315,6 +314,9 @@ namespace BWAPI
       bool prepareIssueCommand(UnitCommand &command);
 
       void clear();
+      
+      BW::Unit bwunit;
+      
     private:
       /** Orders to select this unit (previous selection will be lost. */
       void orderSelect();
@@ -324,6 +326,7 @@ namespace BWAPI
       BWAPI::Position initialPosition;
       int initialResources;
       int initialHitPoints;
+      
   };
 };
 

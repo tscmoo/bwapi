@@ -1,7 +1,8 @@
 #pragma once
 #include <string>
-#include <BW/Offsets.h>
 #include <Util/Types.h>
+
+#include "BW/BWData.h"
 
 namespace BWAPI
 {
@@ -13,41 +14,34 @@ namespace BWAPI
   class Map
   {
     public :
+      Map(BW::Game bwgame);
       // Gets file name of the currently opened map by broodwar
-      static std::string getFileName();
-      static std::string getPathName();
-      static std::string getName();
+      std::string getFileName() const;
+      std::string getPathName() const;
+      std::string getName() const;
 
       // Width of the current map in terms of build tiles
-      static u16 getWidth();
+      u16 getWidth() const;
 
       // Height of the current map in terms of build tiles
-      static u16 getHeight();
+      u16 getHeight() const;
 
-      static bool buildable(int x, int y);
-      static bool walkable(int x, int y);
-      static bool visible(int x, int y);
-      static bool isExplored(int x, int y);
-      static bool hasCreep(int x, int y);
-      static bool isOccupied(int x, int y);
-      static int  groundHeight(int x, int y);
+      bool buildable(int x, int y) const;
+      bool walkable(int x, int y) const;
+      bool visible(int x, int y) const;
+      bool isExplored(int x, int y) const;
+      bool hasCreep(int x, int y) const;
+      bool isOccupied(int x, int y) const;
+      int  groundHeight(int x, int y) const;
 
       // Returns a value that represents the map's terrain.
-      static std::string calculateMapHash();
-      static std::string getMapHash();
-      static void copyToSharedMemory();
+      std::string calculateMapHash();
+      std::string getMapHash() const;
+      void copyToSharedMemory() const;
 
     private :
-      static BW::TileID getTile(int x, int y);
-      static inline BW::activeTile getActiveTile(int x, int y)
-      {
-        if (BW::BWDATA::ActiveTileArray && static_cast<unsigned>(x) < getWidth() && static_cast<unsigned>(y) < getHeight())
-          return BW::BWDATA::ActiveTileArray[x + y * Map::getWidth()];
-        return BW::activeTile{};
-      }
-      static u8 getTileVariation(BW::TileID);
-      static u16 getMiniTile(int x, int y);
+      BW::Game bwgame;
 
-      static std::string savedMapHash;
+      std::string savedMapHash;
   };
-};
+}

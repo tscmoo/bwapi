@@ -5,6 +5,7 @@
 
 #include <Util/Types.h>
 #include <BW/Constants.h>
+#include <BW/BWData.h>
 
 #include <BWAPI/Game.h>
 #include <BWAPI/Server.h>
@@ -18,11 +19,15 @@
 #include "FPSCounter.h"
 #include "AutoMenuManager.h"
 
+namespace bwgame {
+  struct unit_t;
+  struct bullet_t;
+}
+
 namespace BW
 {
-  class CUnit;
-  class CBullet;
-  class Dialog;
+  using CUnit = bwgame::unit_t;
+  using CBullet = bwgame::bullet_t;
 }
 /**
  * Everything in the BWAPI library that doesn't map or work directly with the bw
@@ -184,9 +189,17 @@ namespace BWAPI
       virtual bool setRevealAll(bool reveal = true) override;
 
       virtual unsigned getRandomSeed() const override;
+      
+      virtual void setCharacterName(const std::string& name) override;
+      virtual void setGameType(GameType gameType) override;
+      virtual void setAIModule(AIModule* module) override;
+      virtual void createSinglePlayerGame(std::function<void()> setupFunction) override;
+      virtual void createMultiPlayerGame(std::function<void()> setupFunction) override;
+      virtual void startGame() override;
+      virtual void switchToPlayer(Player p) override;
 
       //Internal BWAPI commands:
-      GameImpl();
+      GameImpl(BW::Game bwgame);
       ~GameImpl();
 
       void initializeData();
@@ -201,7 +214,7 @@ namespace BWAPI
       void onMenuFrame();
       static Race getMenuRace(const std::string &sChosenRace);
       PlayerImpl *_getPlayer(int id);
-      static int _currentPlayerId();
+      int _currentPlayerId();
       static void pressKey(int key);
 
       static void mouseDown(int x, int y);
@@ -231,7 +244,8 @@ namespace BWAPI
 
       void processInterfaceEvents();
 
-      UnitImpl   *getUnitFromIndex(int index);
+      UnitImpl   *getUnitFromBWUnit(BW::Unit unit);
+      BulletImpl *getBulletFromBWBullet(BW::Bullet bullet);
       BulletImpl *getBulletFromIndex(int index);
 
       void onSaveGame(const char *name);
@@ -246,6 +260,8 @@ namespace BWAPI
       Unit _unitFromIndex(int index);
 
     public:
+      BW::Game bwgame;
+      Map map;
       std::array<Race, BW::PLAYABLE_PLAYER_COUNT> lastKnownRaceBeforeStart;
       PlayerImpl *BWAPIPlayer;
       PlayerImpl *enemyPlayer;
@@ -258,7 +274,7 @@ namespace BWAPI
       int frameCount = 0;
       std::array<BW::CUnit*, BW::PLAYER_COUNT> savedUnitSelection;
 
-      static void setLocalSpeedDirect(int speed);
+      void setLocalSpeedDirect(int speed);
     public:
       bool onStartCalled = false;
       AutoMenuManager autoMenuManager;
@@ -275,17 +291,23 @@ namespace BWAPI
 
       GameData* data = server.data;
 
-      HMODULE hAIModule;
+      void* hAIModule;
       AIModule* client = nullptr;
+      bool deleteClient = false;
 
-      HMODULE hTournamentModule;
+      void* hTournamentModule;
       AIModule* tournamentAI = nullptr;
+      
+      AIModule* specifiedModule = nullptr;
 
       // NOTE: This MUST be a POD array (NOT std::array) because of the crappy assembly hacks that are being used
       // Until we can get rid of the assembly hacks, this must be treated like a pissed off cat
       PlayerImpl* players[BW::PLAYER_COUNT];
 
       Unitset evadeUnits; //units leaving accessibleUnits set on current frame
+      
+      int bulletNextId;
+      bool externalModuleConnected = false;
     private:
       std::vector<PlayerImpl*> droppedPlayers;
 
@@ -355,7 +377,6 @@ namespace BWAPI
       bool grid = false;
       bool showfps = false;
 
-      bool externalModuleConnected = false;
       bool calledMatchEnd = false;
 
       int lastEventTime = 0;
@@ -380,5 +401,13 @@ namespace BWAPI
    * We wanted to save passing the Game parameter everywhere, so we expect everywhere in the code that this
    * variable is instantialised.
    */
-  extern GameImpl BroodwarImpl;
+  extern GameImpl& BroodwarImpl;
+  
+  // temporary manager for BroodwarImpl until we get rid of it
+  struct BroodwarImpl_handle {
+    BroodwarImpl_handle(BW::Game bwgame);
+    ~BroodwarImpl_handle();
+    GameImpl& operator*();
+    GameImpl* operator->();
+  };
 };

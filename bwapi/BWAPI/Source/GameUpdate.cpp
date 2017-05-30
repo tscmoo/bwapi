@@ -1,22 +1,22 @@
 #include "GameImpl.h"
 
-#include <Util/Path.h>
 #include <Util/StringUtil.h>
 
 #include "PlayerImpl.h"
 
-#include "DLLMain.h"
 #include "Config.h"
-#include "Detours.h"
 
 #include <BW/Constants.h>
-#include <BW/Bitmap.h>
-#include <BW/CUnit.h>
 #include <BW/OrderTypes.h>
-#include <BW/Pathing.h>
 
 #include "../../../svnrev.h"
 #include "../../../Debug.h"
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 using namespace BWAPI;
 
@@ -91,12 +91,12 @@ void GameImpl::update()
   if ( this->calledMatchEnd ) return;
 
   // Update unit selection
-  if (wantSelectionUpdate && savedUnitSelection != BW::BWDATA::ClientSelectionGroup)
-  {
-    wantSelectionUpdate = false;
-    savedUnitSelection = BW::BWDATA::ClientSelectionGroup;
-    refreshSelectionStates();
-  }
+//  if (wantSelectionUpdate && savedUnitSelection != BW::BWDATA::ClientSelectionGroup)
+//  {
+//    wantSelectionUpdate = false;
+//    savedUnitSelection = BW::BWDATA::ClientSelectionGroup;
+//    refreshSelectionStates();
+//  }
 
   //update players and check to see if they have just left the game.
   _allies.clear();
@@ -178,7 +178,7 @@ void GameImpl::update()
     UnitImpl *u = static_cast<UnitImpl*>(ui);
     deadUnits.insert(u);
     u16 index = u->getIndex();
-    unitArray[index] = new UnitImpl(&BW::BWDATA::UnitNodeTable[index], index);
+    unitArray[index] = new UnitImpl(bwgame.getUnit(index), index);
     u->die();
   }
 
@@ -198,12 +198,12 @@ void GameImpl::update()
   */
 
   //increment frame count if the game is not paused
-  if ( BW::BWDATA::isGamePaused == 0 )
+  if ( bwgame.isGamePaused() == 0 )
     this->frameCount++;
 
   // Set the replay time, this is a workaround to fixing the replay DIVIDE_BY_ZERO exception bug
-  if ( !this->isReplay() )
-    BW::BWDATA::ReplayHead.frameCount = this->getFrameCount()+20;
+//  if ( !this->isReplay() )
+//    BW::BWDATA::ReplayHead.frameCount = this->getFrameCount()+20;
 
   // Execute commands that have been buffered by the command optimizer
   commandOptimizer.flush();
@@ -235,17 +235,17 @@ void GameImpl::updateOverlays()
     BWAPI::Position scrPos = getScreenPosition();
 
     // draw mtx grid
-    for ( int y = scrPos.y/32; y < (scrPos.y + BW::BWDATA::GameScreenBuffer.height())/32 + 1; ++y )
-    {
-      for ( int x = scrPos.x/32; x < (scrPos.x + BW::BWDATA::GameScreenBuffer.width())/32 + 1; ++x )
-      {
-        for ( int i = 0; i < 32; i += 4 )
-        {
-          drawLineMap(x*32 + 32, y*32 + i, x*32 + 32, y*32 + i + 2, BWAPI::Colors::Grey);
-          drawLineMap(x*32 + i, y*32 + 32, x*32 + i + 2, y*32 + 32, BWAPI::Colors::Grey);
-        }
-      }
-    }
+//    for ( int y = scrPos.y/32; y < (scrPos.y + BW::BWDATA::GameScreenBuffer.height())/32 + 1; ++y )
+//    {
+//      for ( int x = scrPos.x/32; x < (scrPos.x + BW::BWDATA::GameScreenBuffer.width())/32 + 1; ++x )
+//      {
+//        for ( int i = 0; i < 32; i += 4 )
+//        {
+//          drawLineMap(x*32 + 32, y*32 + i, x*32 + 32, y*32 + i + 2, BWAPI::Colors::Grey);
+//          drawLineMap(x*32 + i, y*32 + 32, x*32 + i + 2, y*32 + 32, BWAPI::Colors::Grey);
+//        }
+//      }
+//    }
     setTextSize(Text::Size::Small);
     drawTextScreen(64, 288, "%c(%u, %u)", Text::White, (scrPos.x+this->getMousePosition().x)/32, (scrPos.y+this->getMousePosition().y)/32);
     setTextSize();
@@ -274,15 +274,25 @@ void GameImpl::initializeTournamentModule()
   // Load tournament string and module if string exists
   std::string TournamentDllPath = LoadConfigString("ai", "tournament");
   if ( TournamentDllPath.size() > 0 )
+#ifdef _WIN32
     hTournamentModule = LoadLibrary(TournamentDllPath.c_str());
+#else
+    hTournamentModule = dlopen(TournamentDllPath.c_str(), RTLD_NOW);
+#endif
 
   // If tournament module exists
   if ( hTournamentModule )
   {
     // Obtain our tournament functions
-    PFNGameInit         newGameInit         = (PFNGameInit)GetProcAddress(hTournamentModule, TEXT("gameInit"));
-    PFNCreateA1         newTournamentAI     = (PFNCreateA1)GetProcAddress(hTournamentModule, TEXT("newTournamentAI"));
-    PFNCreateTournament newTournamentModule = (PFNCreateTournament)GetProcAddress(hTournamentModule, TEXT("newTournamentModule"));
+#ifdef _WIN32
+    PFNGameInit         newGameInit         = (PFNGameInit)GetProcAddress((HMODULE)hTournamentModule, TEXT("gameInit"));
+    PFNCreateA1         newTournamentAI     = (PFNCreateA1)GetProcAddress((HMODULE)hTournamentModule, TEXT("newTournamentAI"));
+    PFNCreateTournament newTournamentModule = (PFNCreateTournament)GetProcAddress((HMODULE)hTournamentModule, TEXT("newTournamentModule"));
+#else
+    PFNGameInit         newGameInit         = (PFNGameInit)dlsym(hTournamentModule, "gameInit");
+    PFNCreateA1         newTournamentAI     = (PFNCreateA1)dlsym(hTournamentModule, "newTournamentAI");
+    PFNCreateTournament newTournamentModule = (PFNCreateTournament)dlsym(hTournamentModule, "newTournamentModule");
+#endif
 
     // Call the tournament functions if they exist
     if ( newTournamentAI && newTournamentModule && newGameInit )
@@ -294,7 +304,11 @@ void GameImpl::initializeTournamentModule()
     else // error when one function is not found
     {
       // Free the tournament module
-      FreeLibrary(hTournamentModule);
+#ifdef _WIN32
+      FreeLibrary((HMODULE)hTournamentModule);
+#else
+      dlclose(hTournamentModule);
+#endif
       hTournamentModule = NULL;
 
       // Create our error string
@@ -330,10 +344,20 @@ void GameImpl::initializeAIModule()
   // Connect to external module if it exists
   externalModuleConnected = false;
   std::string moduleName("<Nothing>");
-  if ( server.isConnected() ) //check to see if the server is connected to the client
+  if (this->specifiedModule)
+  {
+    if ( !hTournamentModule )
+      Broodwar << Text::Green << "Using AI Module" << std::endl;
+    this->client = this->specifiedModule;
+    this->deleteClient = false;
+    moduleName = "<Module>";
+    externalModuleConnected = true;
+  }
+  else if ( server.isConnected() ) //check to see if the server is connected to the client
   {
     // assign a blank AI module to our variable
     this->client = new AIModule();
+    this->deleteClient = true;
     // Hide success strings in tournament mode
     if ( !hTournamentModule )
       Broodwar << "BWAPI: Connected to AI Client process" << std::endl;
@@ -350,7 +374,7 @@ void GameImpl::initializeAIModule()
     std::string aicfg = LoadConfigString("ai", BUILD_DEBUG ? "ai_dbg" : "ai", "_NULL");
     if (aicfg == "_NULL")
     {
-      BWAPIError("Could not find %s under ai in \"%s\".", BUILD_DEBUG ? "ai_dbg" : "ai", configPath().c_str());
+      Broodwar << Text::Red << "Could not find " << (BUILD_DEBUG ? "ai_dbg" : "ai") << " in \"" << configPath() << "\"." << std::endl;
     }
     else
     {
@@ -360,20 +384,26 @@ void GameImpl::initializeAIModule()
       dll = aicfg.substr(0, aicfg.find_first_of(','));
 
       // Skip to current intended instance
-      for (int i = 0; i < (int)gdwProcNum && aiList; ++i)
+      for (int i = 0; i < getInstanceNumber() && aiList; ++i)
         std::getline(aiList, dll, ',');
 
       // trim whitespace outside quotations and then the quotations
       Util::trim(dll, Util::is_whitespace_or_newline);
       Util::trim(dll, [](char c) { return c == '"'; });
 
+#ifdef _WIN32
       hAIModule = LoadLibraryA(dll.c_str());
+#else
+      hAIModule = dlopen(dll.c_str(), RTLD_NOW);
+      if (!hAIModule) Broodwar << Text::Red << "dlerror: " << dlerror() << std::endl;
+#endif
     }
 
     if ( !hAIModule )
     {
       //if hAIModule is nullptr, there there was a problem when trying to load the AI Module
       this->client = new AIModule();
+      this->deleteClient = true;
 
       // enable flags to allow interaction
       Broodwar->enableFlag(Flag::CompleteMapInformation);
@@ -386,13 +416,19 @@ void GameImpl::initializeAIModule()
     else
     {
       // Obtain the AI module function
-      PFNGameInit newGame     = (PFNGameInit)GetProcAddress(hAIModule, "gameInit");
-      PFNCreateA1 newAIModule = (PFNCreateA1)GetProcAddress(hAIModule, "newAIModule");
+#ifdef _WIN32
+      PFNGameInit newGame     = (PFNGameInit)GetProcAddress((HMODULE)hAIModule, "gameInit");
+      PFNCreateA1 newAIModule = (PFNCreateA1)GetProcAddress((HMODULE)hAIModule, "newAIModule");
+#else
+      PFNGameInit newGame     = (PFNGameInit)dlsym(hAIModule, "gameInit");
+      PFNCreateA1 newAIModule = (PFNCreateA1)dlsym(hAIModule, "newAIModule");
+#endif
       if ( newAIModule && newGame )
       {
         // Call the AI module function and assign the client variable
         newGame(this);
         this->client = newAIModule();
+        this->deleteClient = true;
 
         // Hide success strings in tournament mode
         if ( !hTournamentModule )
@@ -400,12 +436,15 @@ void GameImpl::initializeAIModule()
         externalModuleConnected = true;
 
         // Strip the path from the module name
-        moduleName = Util::Path(dll).filename().string();
+        size_t slash_pos = dll.find_last_of("/\\");
+        if (slash_pos == std::string::npos) moduleName = dll;
+        else moduleName = dll.substr(slash_pos + 1);
       }
       else  // If the AIModule function is not found
       {
         // Create a dummy AI module
         this->client = new AIModule();
+        this->deleteClient = true;
 
         // Enable flags to allow interaction
         Broodwar->enableFlag(Flag::CompleteMapInformation);

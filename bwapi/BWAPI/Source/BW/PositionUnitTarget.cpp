@@ -1,8 +1,8 @@
 #include "PositionUnitTarget.h"
-#include "CUnit.h"
 
 #include "../../../Debug.h"
-#include "Offsets.h"
+
+#include <BWAPI/GameImpl.h>
 
 namespace BW
 {
@@ -19,9 +19,8 @@ namespace BW
   PositionUnitTarget::PositionUnitTarget(const UnitTarget& target)
       : target(target)
   {
-    int index = (target.getTarget() & 0x7FF) - 1;
-    CUnit* unit = &BWDATA::UnitNodeTable[index];
-    this->position = unit->position;
+    size_t index = (target.getTarget() & 0x7FF) - 1;
+    this->position = BWAPI::BroodwarImpl.bwgame.getUnit(index).position();
   }
   //----------------------------------------------------------------------------------------------------------
 }

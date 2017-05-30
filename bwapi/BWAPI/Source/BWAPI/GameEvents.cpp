@@ -1,19 +1,17 @@
 #include "GameImpl.h"
 #include <ctime>
 
-#include <Util/Path.h>
 #include <Util/StringUtil.h>
 
-#include "Detours.h"
-
-#include <BW/Pathing.h>
-#include <BW/Offsets.h>
+#include <BW/BWData.h>
 
 #include <BWAPI/PlayerImpl.h>
 #include <BWAPI/RegionImpl.h>
 
 #include "../../../svnrev.h"
 #include "../../../Debug.h"
+
+#include <chrono>
 
 namespace BWAPI
 {
@@ -29,27 +27,23 @@ namespace BWAPI
     this->calledMatchEnd  = false;
 
     // pre-calculate the map hash
-    Map::calculateMapHash();
+    map.calculateMapHash();
 
     // Obtain Broodwar Regions
-    if ( BW::BWDATA::SAIPathing )
+    size_t rgnCount = bwgame.regionCount();
+    // Iterate regions and insert into region list
+    for (size_t i = 0; i < rgnCount; ++i)
     {
-      u32 rgnCount = BW::BWDATA::SAIPathing->regionCount;
-      // Iterate regions and insert into region list
-      for (u32 i = 0; i < rgnCount; ++i)
-      {
-        Region r = new BWAPI::RegionImpl(i);
-        this->regionsList.insert(r);
-        this->regionMap[i] = r;
-      }
+      Region r = new BWAPI::RegionImpl(i);
+      this->regionsList.insert(r);
+      this->regionMap[i] = r;
+    }
 
-      // Iterate regions again and update neighbor lists
-      for ( BWAPI::Region r : this->regionsList )
-        static_cast<RegionImpl*>(r)->UpdateRegionRelations();
-    } // if SAI_Pathing
+    // Iterate regions again and update neighbor lists
+    for ( BWAPI::Region r : this->regionsList )
+      static_cast<RegionImpl*>(r)->UpdateRegionRelations();
 
     // roughly identify which players can possibly participate in this game
-    // iterate triggers for each player
     for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
     {
       // reset participation and resources
@@ -62,7 +56,7 @@ namespace BWAPI
       // First check if player owns a unit at start
       for (int u = 0; u < UnitTypes::None; ++u)
       {
-        if (BW::BWDATA::Game.unitCounts.all[u][i])
+        if (bwgame.getPlayer(i).unitCountsAll(u))
         {
           if (this->players[i])
             this->players[i]->setParticipating();
@@ -73,30 +67,13 @@ namespace BWAPI
 
     for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
     {
-      // Then iterate each trigger
-      // checking if a unit can be created or given to the player later in the game
-      for ( BW::VCListEntry<BW::Triggers::Trigger> *t = BW::BWDATA::TriggerVectors[i].begin; (u32)t != ~(u32)&BW::BWDATA::TriggerVectors[i].end && (u32)t != (u32)&BW::BWDATA::TriggerVectors[i].begin; t = t->next )
-      {
-        // check if trigger conditions can be met
-        if ( t->container.conditionsCanBeMet() )
-        {
-          // check participation of players
-          for (int p = 0; p < BW::PLAYABLE_PLAYER_COUNT; ++p)
-          {
-            // Don't bother checking for participation if the player doesn't exist
-            // or if the player is already participating (NOT observing)
-            if ( !this->players[p] || !this->players[p]->isObserver() )
-              continue;
-            // Check if trigger actions allow gameplay and set participation if it does.
-            if ( t->container.actionsAllowGameplay(i, p) )
-              this->players[p]->setParticipating();
-          }
-        } // conds can be met
-      } // trigvector iterator
-    } // playercount iterator
+      if ( !this->players[i] || !this->players[i]->isObserver() )
+        continue;
+      if (bwgame.triggersCanAllowGameplayForPlayer(i))
+        this->players[i]->setParticipating();
+    }
 
-
-    if (BW::BWDATA::InReplay) // set replay flags
+    if (bwgame.InReplay()) // set replay flags
     {
       // Set every cheat flag to true
       for (int i = 0; i < Flag::Max; ++i)
@@ -124,50 +101,13 @@ namespace BWAPI
     }
 
     // get pre-race info
-    BYTE bRaceInfo[12] = { 0 };
-    BYTE bOwnerInfo[12] = { 0 };
-
-    Storm::CFile file("staredit\\scenario.chk");
-    if ( file.isValid() )
-    {
-      size_t filesize = file.size();
-      void *pData = SMAlloc(filesize);
-      if ( pData )
-      {
-        if ( file.read(pData, filesize) )
-        {
-          /// @TODO: This map chunk stuff should be done as an iterator of a map file
-          struct _mapchunk
-          {
-            DWORD dwId;
-            DWORD dwSize;
-            BYTE  bData[1];
-          } *mcptr;
-          for ( mcptr = static_cast<_mapchunk*>(pData);
-            reinterpret_cast<DWORD>(mcptr) < reinterpret_cast<DWORD>(pData) + filesize;
-            mcptr = reinterpret_cast<_mapchunk*>(&mcptr->bData[mcptr->dwSize]) )
-          {
-            switch ( mcptr->dwId )
-            {
-            case MAKEFOURCC('S', 'I', 'D', 'E'):
-              if ( mcptr->dwSize == 12 )
-                memcpy(bRaceInfo, mcptr->bData, 12);
-              break;
-            case MAKEFOURCC('O', 'W', 'N', 'R'):
-              if ( mcptr->dwSize == 12 )
-                memcpy(bOwnerInfo, mcptr->bData, 12);
-              break;
-            }
-          }
-        }
-        SMFree(pData);
-      }
-    }
+    std::array<int, 12> bRaceInfo = bwgame.bRaceInfo();
+    std::array<int, 12> bOwnerInfo = bwgame.bOwnerInfo();
 
     for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
     {
       // Skip Start Locations that don't exist
-      if (BW::BWDATA::Game.startPositions[i] == Positions::Origin)
+      if (bwgame.getPlayer(i).startPosition() == Positions::Origin)
         continue;
 
       // If the game is UMS and player is observer and race is not (UserSelect OR invalid player type), skip
@@ -181,15 +121,15 @@ namespace BWAPI
         continue;
 
       // add start location
-      startLocations.push_back(TilePosition(BW::BWDATA::Game.startPositions[i] - Position(64, 48)));
+      startLocations.push_back(TilePosition(bwgame.getPlayer(i).startPosition() - Position(64, 48)));
     }
 
     // Get Player Objects
     for (int i = 0; i < BW::PLAYABLE_PLAYER_COUNT; ++i)
     {
       if ( this->players[i] &&
-           BW::BWDATA::Players[i].nType != PlayerTypes::None &&
-           BW::BWDATA::Players[i].nType <  PlayerTypes::Closed )
+           bwgame.getPlayer(i).nType() != PlayerTypes::None &&
+           bwgame.getPlayer(i).nType() <  PlayerTypes::Closed )
       {
         players[i]->setID(server.getPlayerID(players[i]));
         this->playerSet.insert(this->players[i]);
@@ -228,15 +168,15 @@ namespace BWAPI
 
     for ( int f = 1; f <= 4; ++f )
     {
-      ForceImpl *newForce = new ForceImpl( BW::BWDATA::Game.forceNames[f-1].data() );
+      ForceImpl *newForce = new ForceImpl( bwgame.forceNames(f-1) );
       this->forces.insert( newForce );
       for (int p = 0; p < BW::PLAYABLE_PLAYER_COUNT; ++p)
       {
-        if ( this->players[p] && BW::BWDATA::Players[p].nTeam == f )
+        if ( this->players[p] && bwgame.getPlayer(p).nTeam() == f )
         {
           this->players[p]->force = newForce;
-          if ( BW::BWDATA::Players[p].nType != PlayerTypes::None &&
-               BW::BWDATA::Players[p].nType <  PlayerTypes::Closed )
+          if ( bwgame.getPlayer(p).nType() != PlayerTypes::None &&
+               bwgame.getPlayer(p).nType() <  PlayerTypes::Closed )
             newForce->players.insert(this->players[p]);
         }
       }
@@ -355,59 +295,59 @@ namespace BWAPI
     if ( !this->onStartCalled )
       return;
 
-    if ( autoMenuManager.autoMenuSaveReplay != "" && !this->isReplay() )
-    {
-      // Set replay envvars
-      SetEnvironmentVariableA("BOTNAME",    rn_BWAPIName.c_str());
-      SetEnvironmentVariableA("BOTNAME6",   rn_BWAPIName.substr(0,6).c_str());
-      SetEnvironmentVariableA("BOTRACE",    rn_BWAPIRace.c_str());
-      SetEnvironmentVariableA("MAP",        rn_MapName.c_str());
-      SetEnvironmentVariableA("ALLYNAMES",  rn_AlliesNames.c_str());
-      SetEnvironmentVariableA("ALLYRACES",  rn_AlliesRaces.c_str());
-      SetEnvironmentVariableA("ENEMYNAMES", rn_EnemiesNames.c_str());
-      SetEnvironmentVariableA("ENEMYRACES", rn_EnemiesRaces.c_str());
-      SetEnvironmentVariableA("GAMERESULT", rn_GameResult.c_str ());
+//    if ( autoMenuManager.autoMenuSaveReplay != "" && !this->isReplay() )
+//    {
+//      // Set replay envvars
+//      SetEnvironmentVariableA("BOTNAME",    rn_BWAPIName.c_str());
+//      SetEnvironmentVariableA("BOTNAME6",   rn_BWAPIName.substr(0,6).c_str());
+//      SetEnvironmentVariableA("BOTRACE",    rn_BWAPIRace.c_str());
+//      SetEnvironmentVariableA("MAP",        rn_MapName.c_str());
+//      SetEnvironmentVariableA("ALLYNAMES",  rn_AlliesNames.c_str());
+//      SetEnvironmentVariableA("ALLYRACES",  rn_AlliesRaces.c_str());
+//      SetEnvironmentVariableA("ENEMYNAMES", rn_EnemiesNames.c_str());
+//      SetEnvironmentVariableA("ENEMYRACES", rn_EnemiesRaces.c_str());
+//      SetEnvironmentVariableA("GAMERESULT", rn_GameResult.c_str ());
 
-      // Expand environment strings to szInterPath
-      char szTmpPath[MAX_PATH] = { 0 };
-      ExpandEnvironmentStringsA(autoMenuManager.autoMenuSaveReplay.c_str(), szTmpPath, MAX_PATH);
+//      // Expand environment strings to szInterPath
+//      char szTmpPath[MAX_PATH] = { 0 };
+//      ExpandEnvironmentStringsA(autoMenuManager.autoMenuSaveReplay.c_str(), szTmpPath, MAX_PATH);
 
-      std::string pathStr(szTmpPath);
+//      std::string pathStr(szTmpPath);
 
-      // Double any %'s remaining in the string so that strftime executes correctly
-      {
-        size_t tmp = std::string::npos;
-        while (tmp = pathStr.find_last_of('%', tmp - 1), tmp != std::string::npos)
-          pathStr.insert(tmp, "%");
-      }
+//      // Double any %'s remaining in the string so that strftime executes correctly
+//      {
+//        size_t tmp = std::string::npos;
+//        while (tmp = pathStr.find_last_of('%', tmp - 1), tmp != std::string::npos)
+//          pathStr.insert(tmp, "%");
+//      }
 
-      // Replace the placeholder $'s with %'s for the strftime call
-      std::replace(pathStr.begin(), pathStr.end(), '$', '%');
+//      // Replace the placeholder $'s with %'s for the strftime call
+//      std::replace(pathStr.begin(), pathStr.end(), '$', '%');
 
-      // Get time
-      time_t tmpTime = std::time(nullptr);
-      tm *timeInfo = std::localtime(&tmpTime);
+//      // Get time
+//      time_t tmpTime = std::time(nullptr);
+//      tm *timeInfo = std::localtime(&tmpTime);
 
-      // Expand time strings, add a handler for this specific task to ignore errors in the format string
-      // TODO: Replace with boost time format
-      _invalid_parameter_handler old = _set_invalid_parameter_handler(&ignore_invalid_parameter);
-        std::strftime(szTmpPath, sizeof(szTmpPath), pathStr.c_str(), timeInfo);
-      _set_invalid_parameter_handler(old);
-      pathStr = szTmpPath;
+//      // Expand time strings, add a handler for this specific task to ignore errors in the format string
+//      // TODO: Replace with boost time format
+//      _invalid_parameter_handler old = _set_invalid_parameter_handler(&ignore_invalid_parameter);
+//        std::strftime(szTmpPath, sizeof(szTmpPath), pathStr.c_str(), timeInfo);
+//      _set_invalid_parameter_handler(old);
+//      pathStr = szTmpPath;
 
-      // Remove illegal characters
-      pathStr.erase(std::remove_if(pathStr.begin(), pathStr.end(),
-                                   [](char c) {
-                                     return iscntrl(reinterpret_cast<unsigned char&>(c)) || c == '?' || c == '*' ||
-                                         c == '<' || c == '|' || c == '>' || c == '"';
-                                   }), pathStr.end());
+//      // Remove illegal characters
+//      pathStr.erase(std::remove_if(pathStr.begin(), pathStr.end(),
+//                                   [](char c) {
+//                                     return iscntrl(reinterpret_cast<unsigned char&>(c)) || c == '?' || c == '*' ||
+//                                         c == '<' || c == '|' || c == '>' || c == '"';
+//                                   }), pathStr.end());
 
-      Util::Path parent_p = Util::Path(pathStr).parent_path();
-      Util::create_directories(parent_p);
+//      Util::Path parent_p = Util::Path(pathStr).parent_path();
+//      Util::create_directories(parent_p);
 
-      // Copy to global desired replay name
-      gDesiredReplayName = pathStr;
-    }
+//      // Copy to global desired replay name
+//      gDesiredReplayName = pathStr;
+//    }
 
     if ( !this->calledMatchEnd )
     {
@@ -501,13 +441,13 @@ namespace BWAPI
       return;
     for (Event e : events)
     {
-      static DWORD dwLastEventTime = 0;
+      std::chrono::high_resolution_clock::time_point startTime;
 
       // Reset event stopwatch
       if ( tournamentAI )
       {
         this->lastEventTime = 0;
-        dwLastEventTime     = GetTickCount();
+	  startTime == std::chrono::high_resolution_clock::now();
       }
 
       // Send event to the AI Client module
@@ -518,7 +458,7 @@ namespace BWAPI
         continue;
 
       // Save the last event time
-      this->lastEventTime = GetTickCount() - dwLastEventTime;
+	this->lastEventTime = (int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - startTime).count();
 
       // Send same event to the Tournament module for post-processing
       isTournamentCall = true;

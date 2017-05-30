@@ -7,6 +7,7 @@
 #include <BWAPI/UnitType.h>
 #include <BWAPI/Error.h>
 #include <BWAPI/Color.h>
+#include <BWAPI/AIModule.h>
 
 #include <BWAPI/Filters.h>
 #include <BWAPI/UnaryFilter.h>
@@ -14,6 +15,7 @@
 #include <BWAPI/CoordinateType.h>
 
 #include <sstream>
+#include <functional>
 
 namespace BWAPI
 {
@@ -1726,6 +1728,14 @@ namespace BWAPI
     /// @returns This game's random seed.
     /// @since 4.2.0
     virtual unsigned getRandomSeed() const = 0;
+    
+    virtual void setCharacterName(const std::string& name) = 0;
+    virtual void setGameType(GameType gameType) = 0;
+    virtual void setAIModule(AIModule* module) = 0;
+    virtual void createSinglePlayerGame(std::function<void()> setupFunction) = 0;
+    virtual void createMultiPlayerGame(std::function<void()> setupFunction) = 0;
+    virtual void startGame() = 0;
+    virtual void switchToPlayer(Player p) = 0;
   };
 
   extern Game *BroodwarPtr;

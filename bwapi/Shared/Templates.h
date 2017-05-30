@@ -68,7 +68,7 @@ namespace BWAPI
     }
     //-------------------------------------------- UNIT FINDER -----------------------------------------------
     template <class finder, typename _T>
-    void iterateUnitFinder(finder *finder_x, finder *finder_y, int finderCount, int left, int top, int right, int bottom, const _T &callback)
+    void iterateUnitFinder(finder finder_x, finder finder_y, int finderCount, int left, int top, int right, int bottom, const _T &callback)
     {
       // Note that the native finder in Broodwar uses an id between 1 and 1700, 0 being an unused entry
       // IDs provided by the client are BWAPI IDs, which are not bound
@@ -86,31 +86,25 @@ namespace BWAPI
         b += UnitTypes::maxUnitHeight();
 
       // Obtain finder indexes for all bounds
-      finder *p_xend = finder_x + finderCount;
-      finder *p_yend = finder_y + finderCount;
-
-      // Create finder elements for compatibility with stl functions
-      finder finderVal;
+      finder p_xend = finder_x + finderCount;
+      finder p_yend = finder_y + finderCount;
 
       // Search for the values using built-in binary search algorithm and comparator
-      const auto cmp = [](const finder& a,const finder& b){ return a.searchValue < b.searchValue; };
+      const auto cmpl = [](const auto& a, int b){ return a.searchValue() < b; };
+      const auto cmpu = [](int a, const auto& b){ return a < b.searchValue(); };
 
-      finderVal.searchValue = left;
-      finder *pLeft   = std::lower_bound(finder_x, p_xend, finderVal, cmp);
+      finder pLeft   = std::lower_bound(finder_x, p_xend, left, cmpl);
 
-      finderVal.searchValue = top;
-      finder *pTop    = std::lower_bound(finder_y, p_yend, finderVal, cmp);
+      finder pTop    = std::lower_bound(finder_y, p_yend, top, cmpl);
 
-      finderVal.searchValue = r+1;
-      finder *pRight  = std::upper_bound(pLeft, p_xend, finderVal, cmp);
+      finder pRight  = std::upper_bound(pLeft, p_xend, r + 1, cmpu);
 
-      finderVal.searchValue = b+1;
-      finder *pBottom = std::upper_bound(pTop, p_yend, finderVal, cmp);
+      finder pBottom = std::upper_bound(pTop, p_yend, b + 1, cmpu);
 
       // Iterate the X entries of the finder
-      for ( finder *px = pLeft; px < pRight; ++px )
+      for ( finder px = pLeft; px != pRight; ++px )
       {
-        int iUnitIndex = px->unitIndex;
+        int iUnitIndex = px->unitIndex();
         if ( finderFlags[iUnitIndex] == 0 )
         {
           if ( isWidthExtended )  // If width is small, check unit bounds
@@ -124,9 +118,9 @@ namespace BWAPI
         }
       }
       // Iterate the Y entries of the finder
-      for ( finder *py = pTop; py < pBottom; ++py )
+      for ( finder py = pTop; py != pBottom; ++py )
       {
-        int iUnitIndex = py->unitIndex;
+        int iUnitIndex = py->unitIndex();
         if ( finderFlags[iUnitIndex] == 1 )
         {
           if ( isHeightExtended ) // If height is small, check unit bounds
@@ -140,9 +134,9 @@ namespace BWAPI
         }
       }
       // Final Iteration
-      for ( finder *px = pLeft; px < pRight; ++px )
+      for ( finder px = pLeft; px != pRight; ++px )
       {
-        int iUnitIndex = px->unitIndex;
+        int iUnitIndex = px->unitIndex();
         if ( finderFlags[iUnitIndex] == 2 )
         {
           Unit u = static_cast<GameImpl*>(BroodwarPtr)->_unitFromIndex(iUnitIndex);

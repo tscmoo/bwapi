@@ -1,6 +1,5 @@
 #include "GameImpl.h"
 
-#include <BW/CBullet.h>
 #include <cassert>
 
 #include <BWAPI/BulletImpl.h>
@@ -26,11 +25,12 @@ namespace BWAPI
     bullets.clear();
 
     // Repopulate bullets set
-    for ( BW::CBullet *curritem = BW::BWDATA::BulletNodeTable_FirstElement; 
-          curritem; 
-          curritem = curritem->next )
+    for ( auto curritem = bwgame.BulletNodeTable_begin(); 
+          curritem != bwgame.BulletNodeTable_end(); 
+          ++curritem )
     {
-      BulletImpl *b = BulletImpl::BWBulletToBWAPIBullet(curritem);
+      BulletImpl*& b = this->bulletArray.at(curritem->getIndex());
+      b->bwbullet = *curritem;
       b->setExists(true);
       this->bullets.insert(b);
     }

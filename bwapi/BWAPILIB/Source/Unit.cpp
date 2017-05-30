@@ -276,7 +276,6 @@ namespace BWAPI
 
     // Store the types as locals
     UnitType thisType = getType();
-    UnitType targType = target->getType();
 
     // Obtain the weapon type
     WeaponType wpn = target->isFlying() ? thisType.airWeapon() : thisType.groundWeapon();

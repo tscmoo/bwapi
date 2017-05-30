@@ -66,8 +66,10 @@ namespace BWAPI
     ///     The type being converted to type T.
     template<typename FromT> Point(const Point<FromT, Scale> &pt) : x( static_cast<T>(pt.x) ), y( static_cast<T>(pt.y) ) {}
 
+#ifdef _MSC_VER
 #pragma warning( push )
 #pragma warning( disable: 4723 )
+#endif
     /// <summary>A conversion copy constructor to convert positions of different scales to one
     /// another.</summary>
     ///
@@ -78,7 +80,9 @@ namespace BWAPI
     template<typename FromT, int FromScale> explicit Point(const Point<FromT, FromScale> &pt)
       : x(static_cast<T>(FromScale > Scale ? pt.x*(FromScale / Scale) : pt.x / (Scale / FromScale)))
       , y(static_cast<T>(FromScale > Scale ? pt.y*(FromScale / Scale) : pt.y / (Scale / FromScale))) { }
+#ifdef _MSC_VER
 #pragma warning( pop )
+#endif
 
     // Operators
     /// <summary>A convenience for use with if statements to identify if a position is valid.</summary>
